@@ -9,7 +9,7 @@ export const DEFAULT_SCAN_OPTIONS: Omit<ScanOptions, "startUrl"> = {
   enableLayout: true,
   enableClick: true,
   enableNavigationProbe: true,
-  maxClicks: 30,
+  maxClicks: 500,
   maxOverlayDepth: 5,
   clickDelayMs: 450,
   postClickSettleMs: 300,

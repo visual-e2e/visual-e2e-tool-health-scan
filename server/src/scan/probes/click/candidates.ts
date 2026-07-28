@@ -1,5 +1,5 @@
 import type { Page } from "playwright";
-import { LabelSource, ScopeType, type ClickTargetIdentity } from "../../../types.js";
+import { ScopeType, type ClickTargetIdentity } from "../../../types.js";
 import { buildTargetId } from "../../utils/target-id.js";
 import type { OverlayInfo } from "./overlay.js";
 import { OVERLAY_CANDIDATE_SELECTORS, CLOSE_HINT_SELECTORS } from "./overlay.js";
@@ -55,7 +55,7 @@ export async function collectClickTargets(
       } = payload.args;
 
       let root: ParentNode = document;
-      if (scopeType === ScopeType.Overlay && overlaySelector) {
+      if (scopeType === "overlay" && overlaySelector) {
         const overlays = Array.from(document.querySelectorAll(overlaySelector));
         let found: Element | null = null;
         let bestZ = -1;
@@ -91,7 +91,7 @@ export async function collectClickTargets(
         tag: string;
         component?: string;
         elementId?: string;
-        scope: { type: ScopeType; scopeLabel?: string; layer: number };
+        scope: { type: string; scopeLabel?: string; layer: number };
         anchors?: {
           dialogTitle?: string;
           sectionHeading?: string;
@@ -126,7 +126,7 @@ export async function collectClickTargets(
       };
 
       for (const el of nodes) {
-        if (scopeType === ScopeType.Page) {
+        if (scopeType === "page") {
           let insideOverlay = false;
           for (let si = 0; si < overlaySels.length; si++) {
             if (el.closest(overlaySels[si]!)) {
@@ -222,7 +222,7 @@ export async function collectClickTargets(
         seen.add(dedupeKey);
 
         let dialogTitle: string | undefined;
-        if (scopeType === ScopeType.Overlay) {
+        if (scopeType === "overlay") {
           const titleEl = (root as Element).querySelector(
             ".ant-modal-title, .thy-dialog-header, [class*='title']",
           );
@@ -262,7 +262,7 @@ export async function collectClickTargets(
 
         const searchParts = [
           label,
-          scopeType === ScopeType.Overlay ? scopeLabel : "",
+          scopeType === "overlay" ? scopeLabel : "",
           elementId,
           dialogTitle,
           sectionHeading,
@@ -279,7 +279,7 @@ export async function collectClickTargets(
           elementId,
           scope: {
             type: scopeType,
-            scopeLabel: scopeType === ScopeType.Overlay ? scopeLabel : undefined,
+            scopeLabel: scopeType === "overlay" ? scopeLabel : undefined,
             layer,
           },
           anchors: {
@@ -323,6 +323,10 @@ export async function collectClickTargets(
   return raw.map((partial) => ({
     ...partial,
     labelSource: partial.labelSource as ClickTargetIdentity["labelSource"],
+    scope: {
+      ...partial.scope,
+      type: partial.scope.type as ClickTargetIdentity["scope"]["type"],
+    },
     targetId: buildTargetId(partial as Omit<ClickTargetIdentity, "targetId">),
   }));
 }
@@ -338,7 +342,7 @@ export async function collectNavTargets(page: Page): Promise<ClickTargetIdentity
       tag: string;
       component?: string;
       elementId?: string;
-      scope: { type: ScopeType; scopeLabel?: string; layer: number };
+      scope: { type: string; scopeLabel?: string; layer: number };
       anchors?: { activeNavRoute?: string };
       navigationPath?: Array<{
         kind: string;
@@ -386,12 +390,12 @@ export async function collectNavTargets(page: Page): Promise<ClickTargetIdentity
       attrs.role = "tab";
       out.push({
         label,
-        labelSource: LabelSource.Text,
+        labelSource: "text",
         role: "tab",
         tag: "a",
         component: "thy-nav-item",
         elementId: el.id || undefined,
-        scope: { type: ScopeType.Page, scopeLabel: "顶栏导航", layer: 0 },
+        scope: { type: "page", scopeLabel: "顶栏导航", layer: 0 },
         position: { top: rect.top, left: rect.left, width: rect.width, height: rect.height },
         matchContext: {
           searchText: [label, "顶栏导航", el.id].filter(Boolean).join(" "),
@@ -431,12 +435,12 @@ export async function collectNavTargets(page: Page): Promise<ClickTargetIdentity
         : [{ kind: "menu-item", label, component: "thy-menu-item", elementId: el.id || undefined }];
       out.push({
         label,
-        labelSource: LabelSource.Text,
+        labelSource: "text",
         role: "menuitem",
         tag: "thy-menu-item",
         component: "thy-menu-item",
         elementId: el.id || undefined,
-        scope: { type: ScopeType.Page, scopeLabel: "侧栏菜单", layer: 0 },
+        scope: { type: "page", scopeLabel: "侧栏菜单", layer: 0 },
         anchors: { activeNavRoute },
         navigationPath: navPath,
         position: { top: rect.top, left: rect.left, width: rect.width, height: rect.height },
@@ -455,6 +459,10 @@ export async function collectNavTargets(page: Page): Promise<ClickTargetIdentity
   return raw.map((partial) => ({
     ...partial,
     labelSource: partial.labelSource as ClickTargetIdentity["labelSource"],
+    scope: {
+      ...partial.scope,
+      type: partial.scope.type as ClickTargetIdentity["scope"]["type"],
+    },
     navigationPath: partial.navigationPath as ClickTargetIdentity["navigationPath"],
     targetId: buildTargetId(partial as Omit<ClickTargetIdentity, "targetId">),
   }));

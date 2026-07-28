@@ -144,7 +144,7 @@ export function normalizeOptions(input: Partial<ScanOptions> & { startUrl: strin
     enableClick: input.enableClick ?? DEFAULT_SCAN_OPTIONS.enableClick,
     enableNavigationProbe:
       input.enableNavigationProbe ?? DEFAULT_SCAN_OPTIONS.enableNavigationProbe,
-    maxClicks: Math.max(1, Math.min(200, Number(input.maxClicks ?? DEFAULT_SCAN_OPTIONS.maxClicks))),
+    maxClicks: Math.max(1, Number(input.maxClicks ?? DEFAULT_SCAN_OPTIONS.maxClicks)),
     maxOverlayDepth: Math.max(
       1,
       Math.min(10, Number(input.maxOverlayDepth ?? DEFAULT_SCAN_OPTIONS.maxOverlayDepth)),

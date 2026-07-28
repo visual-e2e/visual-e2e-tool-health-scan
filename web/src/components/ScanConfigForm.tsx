@@ -134,11 +134,10 @@ export function ScanConfigForm(props: ScanConfigFormProps) {
               最大点击
               <InputNumber
                 min={1}
-                max={200}
                 style={{ width: 72, marginLeft: 8 }}
                 value={maxClicks}
                 disabled={disabled || !enableClick}
-                onChange={(v) => onMaxClicksChange(Number(v ?? 30))}
+                onChange={(v) => onMaxClicksChange(Number(v ?? DEFAULT_SCAN_OPTIONS.maxClicks))}
               />
             </span>
             <span>
