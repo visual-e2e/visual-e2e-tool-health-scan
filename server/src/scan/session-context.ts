@@ -6,6 +6,7 @@ import {
   ScanStatus,
   type ClickActionLog,
   type ClickTargetIdentity,
+  type FailureCode,
   type ScanIssue,
   type ScanOptions,
   type ScanPhase,
@@ -25,6 +26,9 @@ export interface ActiveScan {
   clicksSkipped: number;
   progress?: string;
   error?: string;
+  reportId?: string;
+  videoPath?: string;
+  artifactsDir?: string;
   startedAt: string;
   updatedAt: string;
   browser: Browser | null;
@@ -33,6 +37,7 @@ export interface ActiveScan {
   abort: boolean;
   pauseRequested: boolean;
   collecting: boolean;
+  profileId?: string;
   runPromise?: Promise<void>;
 }
 
@@ -109,6 +114,9 @@ export function toView(session: ActiveScan): ScanSessionView {
     },
     progress: session.progress,
     error: session.error,
+    reportId: session.reportId,
+    videoPath: session.videoPath,
+    artifactsDir: session.artifactsDir,
     startedAt: session.startedAt,
     updatedAt: session.updatedAt,
   };
@@ -125,6 +133,8 @@ export function recordClickFailure(
   pageUrl: string,
   target: ClickTargetIdentity,
   error?: string,
+  failureCode?: FailureCode,
+  screenshotPath?: string,
 ): void {
   addIssue(session, {
     category: IssueCategory.Click,
@@ -133,6 +143,8 @@ export function recordClickFailure(
     detail: error,
     pageUrl,
     clickTarget: target,
+    failureCode,
+    screenshotPath,
   });
   touch(session);
 }

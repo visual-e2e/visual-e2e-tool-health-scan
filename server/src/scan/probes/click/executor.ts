@@ -1,7 +1,7 @@
 import type { Page } from "playwright";
 import {
   ClickOutcome,
-  ClickPolicy,
+  FailureCode,
   IssueCategory,
   IssueSeverity,
   PhaseName,
@@ -24,7 +24,11 @@ import { sleep } from "../../utils/sleep.js";
 import { collectClickTargets } from "./candidates.js";
 import { closeTopOverlay, detectOverlayStack } from "./close.js";
 import { sortClickTargets } from "./rules.js";
+import { pickNextTarget, shouldSkipTarget } from "./policy.js";
 import { tryClickTarget } from "./resolver.js";
+import { classifyClickFailure } from "../../../report/issue-classifier.js";
+import { captureFailureScreenshot } from "../../../report/artifact-writer.js";
+import { tryRecoverFromFailure } from "./recover.js";
 
 async function waitWhilePaused(session: ActiveScan): Promise<boolean> {
   while (!session.abort && (session.pauseRequested || session.status === ScanStatus.Paused)) {
@@ -100,15 +104,11 @@ export async function runClickProbe(session: ActiveScan, page: Page): Promise<vo
       );
     }
 
-    let scored = sortClickTargets(candidates, session.options);
+    const scored = sortClickTargets(candidates, session.options).filter(
+      (s) => !/^(关闭|close|×|✕)$/i.test(s.target.label),
+    );
 
-    if (inOverlay) {
-      scored = scored.filter((s) => !/^(关闭|close|×|✕)$/i.test(s.target.label));
-    } else {
-      scored = scored.filter((s) => !/^(关闭|close|×|✕)$/i.test(s.target.label));
-    }
-
-    let nextScored = scored.find((s) => !tried.has(s.target.targetId));
+    let nextScored = pickNextTarget(scored, tried);
 
     if (inOverlay && nextScored && dialogContentClicks >= maxDialogContentClicks) {
       nextScored = undefined;
@@ -128,6 +128,7 @@ export async function runClickProbe(session: ActiveScan, page: Page): Promise<vo
             title: "浮层关闭失败",
             detail: "浮层内容已点完，但未能关闭",
             pageUrl: page.url(),
+            failureCode: FailureCode.OverlayCloseFailed,
           });
           touch(session);
           break;
@@ -138,31 +139,15 @@ export async function runClickProbe(session: ActiveScan, page: Page): Promise<vo
       break;
     }
 
-    if (nextScored.skipReason === SkipReason.Blacklist) {
+    const skipReason = shouldSkipTarget(nextScored, session.options);
+    if (skipReason) {
       tried.add(nextScored.target.targetId);
       session.clicksSkipped += 1;
       addClickAction(session, {
         pageUrl: page.url(),
         target: nextScored.target,
         outcome: ClickOutcome.Skipped,
-        skipReason: SkipReason.Blacklist,
-        score: nextScored.score,
-        matchedRules: nextScored.matchedRules,
-      });
-      continue;
-    }
-
-    if (
-      session.options.clickPolicy === ClickPolicy.WhitelistOnly &&
-      nextScored.score <= session.options.defaultWeight
-    ) {
-      tried.add(nextScored.target.targetId);
-      session.clicksSkipped += 1;
-      addClickAction(session, {
-        pageUrl: page.url(),
-        target: nextScored.target,
-        outcome: ClickOutcome.Skipped,
-        skipReason: SkipReason.NotInWhitelist,
+        skipReason,
         score: nextScored.score,
         matchedRules: nextScored.matchedRules,
       });
@@ -175,7 +160,30 @@ export async function runClickProbe(session: ActiveScan, page: Page): Promise<vo
     session.status = ScanStatus.Running;
     touch(session);
 
-    const result = await tryClickTarget(page, nextScored.target);
+    let result = await tryClickTarget(page, nextScored.target);
+    let failureCode = result.ok ? undefined : classifyClickFailure(result.error);
+
+    if (!result.ok && failureCode) {
+      const recovered = await tryRecoverFromFailure(page, failureCode);
+      if (recovered) {
+        result = await tryClickTarget(page, nextScored.target);
+        failureCode = result.ok ? undefined : classifyClickFailure(result.error);
+      }
+    }
+
+    let screenshotPath: string | undefined;
+    if (
+      !result.ok &&
+      session.options.enableFailureScreenshot !== false &&
+      session.page
+    ) {
+      screenshotPath = await captureFailureScreenshot(
+        page,
+        session.id,
+        nextScored.target.targetId,
+      );
+    }
+
     tried.add(nextScored.target.targetId);
     session.clicksTried += 1;
     if (inOverlay) dialogContentClicks += 1;
@@ -187,13 +195,15 @@ export async function runClickProbe(session: ActiveScan, page: Page): Promise<vo
       score: nextScored.score,
       matchedRules: nextScored.matchedRules,
       error: result.error,
+      failureCode,
+      screenshotPath,
     });
 
     if (result.ok) {
       consecutiveErrors = 0;
     } else {
       consecutiveErrors += 1;
-      recordClickFailure(session, page.url(), nextScored.target, result.error);
+      recordClickFailure(session, page.url(), nextScored.target, result.error, failureCode, screenshotPath);
 
       if (
         consecutiveErrors >= session.options.consecutiveErrorLimit &&

@@ -1,5 +1,6 @@
 import type {
   ClickOutcome,
+  FailureCode,
   IssueCategory,
   IssueSeverity,
   SkipReason,
@@ -16,6 +17,8 @@ export interface ClickActionLog {
   score: number;
   matchedRules: MatchedRuleInfo[];
   error?: string;
+  failureCode?: FailureCode;
+  screenshotPath?: string;
 }
 
 export interface ScanIssue {
@@ -31,6 +34,8 @@ export interface ScanIssue {
   /** @deprecated debug only; use clickTarget for reports */
   selector?: string;
   clickTarget?: ClickTargetIdentity;
+  failureCode?: FailureCode;
+  screenshotPath?: string;
   count: number;
   timestamp: string;
 }

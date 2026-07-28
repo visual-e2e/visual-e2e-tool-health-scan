@@ -1,10 +1,7 @@
-import { Checkbox, Form, Input, InputNumber, Select, Space } from "antd";
-import type { ProjectListItem } from "../rpc/protocol";
-import { ClickPolicy, DEFAULT_SCAN_OPTIONS } from "../types";
+import { Button, Checkbox, Form, Input, InputNumber, Select, Space } from "antd";
+import { ClickPolicy, DEFAULT_SCAN_OPTIONS, type LoginProfile, type LoginSelectors } from "../types";
 
 export interface ScanConfigFormProps {
-  projectId?: string;
-  projects?: ProjectListItem[];
   startUrl: string;
   enableNetwork: boolean;
   enableLayout: boolean;
@@ -16,8 +13,12 @@ export interface ScanConfigFormProps {
   consecutiveErrorLimit: number;
   refreshOnConsecutiveErrors: boolean;
   clickPolicy: (typeof ClickPolicy)[keyof typeof ClickPolicy];
+  autoLoginEnabled: boolean;
+  enableRecording: boolean;
+  enableFailureScreenshot: boolean;
+  loginProfile?: LoginProfile;
+  loginSelectors?: LoginSelectors;
   disabled?: boolean;
-  onProjectChange: (projectId?: string) => void;
   onStartUrlChange: (url: string) => void;
   onEnableNetworkChange: (v: boolean) => void;
   onEnableLayoutChange: (v: boolean) => void;
@@ -29,12 +30,15 @@ export interface ScanConfigFormProps {
   onConsecutiveErrorLimitChange: (v: number) => void;
   onRefreshOnConsecutiveErrorsChange: (v: boolean) => void;
   onClickPolicyChange: (v: (typeof ClickPolicy)[keyof typeof ClickPolicy]) => void;
+  onAutoLoginEnabledChange: (v: boolean) => void;
+  onEnableRecordingChange: (v: boolean) => void;
+  onEnableFailureScreenshotChange: (v: boolean) => void;
+  onLoginProfileChange: (profile: LoginProfile) => void;
+  onLoginSelectorsChange: (selectors: LoginSelectors) => void;
 }
 
 export function ScanConfigForm(props: ScanConfigFormProps) {
   const {
-    projectId,
-    projects,
     startUrl,
     enableNetwork,
     enableLayout,
@@ -46,8 +50,12 @@ export function ScanConfigForm(props: ScanConfigFormProps) {
     consecutiveErrorLimit,
     refreshOnConsecutiveErrors,
     clickPolicy,
+    autoLoginEnabled,
+    enableRecording,
+    enableFailureScreenshot,
+    loginProfile,
+    loginSelectors,
     disabled,
-    onProjectChange,
     onStartUrlChange,
     onEnableNetworkChange,
     onEnableLayoutChange,
@@ -59,28 +67,23 @@ export function ScanConfigForm(props: ScanConfigFormProps) {
     onConsecutiveErrorLimitChange,
     onRefreshOnConsecutiveErrorsChange,
     onClickPolicyChange,
+    onAutoLoginEnabledChange,
+    onEnableRecordingChange,
+    onEnableFailureScreenshotChange,
+    onLoginProfileChange,
+    onLoginSelectorsChange,
   } = props;
+
+  const username = loginProfile?.username ?? "";
+  const password = loginProfile?.password ?? "";
 
   return (
     <Form layout="vertical">
-      <Form.Item label="项目">
-        <Select
-          allowClear
-          placeholder="选择项目以填充 BASE_URL"
-          value={projectId}
-          options={(projects ?? []).map((p) => ({
-            value: p.id,
-            label: `${p.name} (${p.id})`,
-          }))}
-          onChange={(v) => onProjectChange(v)}
-          disabled={disabled}
-        />
-      </Form.Item>
       <Form.Item label="入口 URL" required>
         <Input
           value={startUrl}
           onChange={(e) => onStartUrlChange(e.target.value)}
-          placeholder="https://example.com/"
+          placeholder="https://example.com/signin"
           disabled={disabled}
         />
       </Form.Item>
@@ -163,6 +166,98 @@ export function ScanConfigForm(props: ScanConfigFormProps) {
               />
             </span>
           </Space>
+        </Space>
+      </Form.Item>
+      <Form.Item label="登录">
+        <Space direction="vertical" style={{ width: "100%" }} size="middle">
+          <Checkbox
+            checked={autoLoginEnabled}
+            disabled={disabled}
+            onChange={(e) => onAutoLoginEnabledChange(e.target.checked)}
+          >
+            启用自动登录
+          </Checkbox>
+          <Space.Compact style={{ width: "100%" }}>
+            <Button disabled style={{ width: 120, pointerEvents: "none" }}>
+              账号
+            </Button>
+            <Input
+              value={username}
+              disabled={disabled}
+              placeholder="账号"
+              onChange={(e) =>
+                onLoginProfileChange({ ...loginProfile, username: e.target.value, source: "manual" })
+              }
+            />
+          </Space.Compact>
+          <Space.Compact style={{ width: "100%" }}>
+            <Button disabled style={{ width: 120, pointerEvents: "none" }}>
+              密码
+            </Button>
+            <Input
+              value={password}
+              disabled={disabled}
+              placeholder="密码"
+              onChange={(e) =>
+                onLoginProfileChange({ ...loginProfile, password: e.target.value, source: "manual" })
+              }
+            />
+          </Space.Compact>
+          <Space.Compact style={{ width: "100%" }}>
+            <Button disabled style={{ width: 120, pointerEvents: "none" }}>
+              账号 selector
+            </Button>
+            <Input
+              value={loginSelectors?.username ?? ""}
+              disabled={disabled}
+              placeholder='input[name="userAccount"]'
+              onChange={(e) =>
+                onLoginSelectorsChange({ ...loginSelectors, username: e.target.value })
+              }
+            />
+          </Space.Compact>
+          <Space.Compact style={{ width: "100%" }}>
+            <Button disabled style={{ width: 120, pointerEvents: "none" }}>
+              密码 selector
+            </Button>
+            <Input
+              value={loginSelectors?.password ?? ""}
+              disabled={disabled}
+              placeholder='input[type="password"]'
+              onChange={(e) =>
+                onLoginSelectorsChange({ ...loginSelectors, password: e.target.value })
+              }
+            />
+          </Space.Compact>
+          <Space.Compact style={{ width: "100%" }}>
+            <Button disabled style={{ width: 120, pointerEvents: "none" }}>
+              登录按钮 selector
+            </Button>
+            <Input
+              value={loginSelectors?.submit ?? ""}
+              disabled={disabled}
+              placeholder='button:has-text("登录")'
+              onChange={(e) => onLoginSelectorsChange({ ...loginSelectors, submit: e.target.value })}
+            />
+          </Space.Compact>
+        </Space>
+      </Form.Item>
+      <Form.Item label="录制">
+        <Space direction="vertical">
+          <Checkbox
+            checked={enableRecording}
+            disabled={disabled}
+            onChange={(e) => onEnableRecordingChange(e.target.checked)}
+          >
+            录制扫描视频
+          </Checkbox>
+          <Checkbox
+            checked={enableFailureScreenshot}
+            disabled={disabled || !enableClick}
+            onChange={(e) => onEnableFailureScreenshotChange(e.target.checked)}
+          >
+            点击失败时截图
+          </Checkbox>
         </Space>
       </Form.Item>
       <Form.Item label="容错">

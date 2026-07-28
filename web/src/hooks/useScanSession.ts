@@ -20,7 +20,8 @@ export function useScanSession() {
   }, [session?.sessionId, session?.status]);
 
   const launchMut = useMutation({
-    mutationFn: (body: Partial<ScanOptions> & { startUrl: string }) => api.createScan(body),
+    mutationFn: (body: { profileId: string } | (Partial<ScanOptions> & { startUrl: string })) =>
+      api.createScan(body),
     onSuccess: (data) => {
       setSession(data);
       message.success("浏览器启动中，就绪后可登录再开始扫描");

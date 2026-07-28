@@ -1,11 +1,21 @@
 import type {
   BlacklistRuleFile,
   ClickRuleConfig,
+  CreateProfilePayload,
   HostProjectContext,
+  LoginDefaults,
+  LoginProfile,
+  LoginSelectors,
+  PersistedScanConfig,
   ProjectMeta,
+  ReportMeta,
+  ReportRecord,
   RuleListType,
   ScanOptions,
+  ScanProfileMeta,
   ScanSession,
+  UpdateProfilePayload,
+  UpdateReportPayload,
   WhitelistRuleFile,
 } from "../types";
 
@@ -31,6 +41,12 @@ function postScanAction(sessionId: string, action: string) {
   });
 }
 
+type RulesBundle = {
+  blacklist: BlacklistRuleFile;
+  whitelist: WhitelistRuleFile;
+  files: { baseDir: string; blacklistPath: string; whitelistPath: string };
+};
+
 export const api = {
   health: () => request<{ ok: boolean; toolId: string }>("/api/health"),
   browserStatus: () =>
@@ -38,7 +54,29 @@ export const api = {
   projects: () => request<{ projects: ProjectMeta[] }>("/api/projects"),
   projectContext: (projectId: string) =>
     request<HostProjectContext>(`/api/projects/${encodeURIComponent(projectId)}/context`),
-  createScan: (body: Partial<ScanOptions> & { startUrl: string }) =>
+  loginDefaults: (projectId: string) =>
+    request<LoginDefaults>(`/api/projects/${encodeURIComponent(projectId)}/login-defaults`),
+
+  listProfiles: () => request<{ profiles: ScanProfileMeta[] }>("/api/profiles"),
+  createProfile: (body: CreateProfilePayload) =>
+    request<ScanProfileMeta>("/api/profiles", { method: "POST", body: JSON.stringify(body) }),
+  getProfile: (profileId: string) => request<ScanProfileMeta>(`/api/profiles/${profileId}`),
+  updateProfile: (profileId: string, body: UpdateProfilePayload) =>
+    request<ScanProfileMeta>(`/api/profiles/${profileId}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  deleteProfile: (profileId: string) =>
+    request<{ ok: boolean }>(`/api/profiles/${profileId}`, { method: "DELETE" }),
+  getScanConfig: (profileId: string) =>
+    request<PersistedScanConfig>(`/api/profiles/${profileId}/scan-config`),
+  saveScanConfig: (profileId: string, body: PersistedScanConfig) =>
+    request<PersistedScanConfig>(`/api/profiles/${profileId}/scan-config`, {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
+
+  createScan: (body: { profileId: string } | (Partial<ScanOptions> & { startUrl: string })) =>
     request<ScanSession>("/api/scans", { method: "POST", body: JSON.stringify(body) }),
   getScan: (sessionId: string) => request<ScanSession>(`/api/scans/${sessionId}`),
   startScan: (sessionId: string) => postScanAction(sessionId, "start"),
@@ -47,31 +85,46 @@ export const api = {
   stopScan: (sessionId: string) => postScanAction(sessionId, "stop"),
   deleteScan: (sessionId: string) =>
     request<{ ok: boolean }>(`/api/scans/${sessionId}`, { method: "DELETE" }),
-  getRules: () =>
-    request<{
-      blacklist: BlacklistRuleFile;
-      whitelist: WhitelistRuleFile;
-      files: { baseDir: string; blacklistPath: string; whitelistPath: string };
-    }>("/api/rules"),
-  saveRules: (body: {
-    blacklistRules: ClickRuleConfig[];
-    whitelistRules: ClickRuleConfig[];
-    whitelistDefaultWeight: number;
-  }) =>
-    request<{
-      blacklist: BlacklistRuleFile;
-      whitelist: WhitelistRuleFile;
-      files: { baseDir: string; blacklistPath: string; whitelistPath: string };
-    }>("/api/rules", { method: "POST", body: JSON.stringify(body) }),
-  resetRules: () =>
-    request<{
-      blacklist: BlacklistRuleFile;
-      whitelist: WhitelistRuleFile;
-      files: { baseDir: string; blacklistPath: string; whitelistPath: string };
-    }>("/api/rules/reset", { method: "POST", body: "{}" }),
-  openRulesFile: (list: RuleListType) =>
-    request<{ path: string }>("/api/rules/open-file", {
+
+  getRules: (profileId: string) => request<RulesBundle>(`/api/profiles/${profileId}/rules`),
+  saveRules: (
+    profileId: string,
+    body: {
+      blacklistRules: ClickRuleConfig[];
+      whitelistRules: ClickRuleConfig[];
+      whitelistDefaultWeight: number;
+    },
+  ) =>
+    request<RulesBundle>(`/api/profiles/${profileId}/rules`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  resetRules: (profileId: string) =>
+    request<RulesBundle>(`/api/profiles/${profileId}/rules/reset`, {
+      method: "POST",
+      body: "{}",
+    }),
+  openRulesFile: (profileId: string, list: RuleListType) =>
+    request<{ path: string }>(`/api/profiles/${profileId}/rules/open-file`, {
       method: "POST",
       body: JSON.stringify({ list }),
     }),
+
+  listReports: (profileId?: string) =>
+    request<{ reports: ReportMeta[] }>(
+      profileId ? `/api/reports?profileId=${encodeURIComponent(profileId)}` : "/api/reports",
+    ),
+  getReport: (reportId: string) => request<ReportRecord>(`/api/reports/${reportId}`),
+  updateReport: (reportId: string, body: UpdateReportPayload) =>
+    request<ReportMeta>(`/api/reports/${reportId}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  deleteReport: (reportId: string) =>
+    request<{ ok: boolean }>(`/api/reports/${reportId}`, { method: "DELETE" }),
+  openReportsDir: () => request<{ path: string }>("/api/reports/open-dir", { method: "POST", body: "{}" }),
+  artifactUrl: (sessionId: string, filename: string) =>
+    `/api/artifacts/${encodeURIComponent(sessionId)}/${encodeURIComponent(filename)}`,
 };
+
+export type { LoginProfile, LoginSelectors, PersistedScanConfig };

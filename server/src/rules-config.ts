@@ -14,7 +14,7 @@ import {
   type RuleType,
   type WhitelistRuleFile,
 } from "./types.js";
-import { resolveClientStorageRoot } from "./paths.js";
+import { resolveProfileConfigDir, resolveToolConfigDir } from "./storage/paths.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -34,8 +34,8 @@ interface SaveRulesPayload {
   whitelistDefaultWeight: number;
 }
 
-function getRulesFilePaths() {
-  const baseDir = join(resolveClientStorageRoot(), "config");
+function getRulesFilePaths(profileId: string) {
+  const baseDir = resolveProfileConfigDir(profileId);
   const blacklistPath = join(baseDir, "blacklist.json");
   const whitelistPath = join(baseDir, "whitelist.json");
   return { baseDir, blacklistPath, whitelistPath };
@@ -63,12 +63,9 @@ async function writeBundle(
   await writeFile(paths.whitelistPath, `${JSON.stringify(bundle.whitelist, null, 2)}\n`, "utf-8");
 }
 
-export async function getRulesConfigBundle(): Promise<RulesConfigBundle> {
-  const paths = getRulesFilePaths();
-  await ensureRulesDir(paths.baseDir);
-
+function defaultRulesBundle() {
   const defaultWhitelist = getDefaultWhitelistConfig();
-  const defaultBundle = {
+  return {
     blacklist: {
       version: 3 as const,
       rules: getDefaultBlacklistConfig(),
@@ -79,6 +76,21 @@ export async function getRulesConfigBundle(): Promise<RulesConfigBundle> {
       rules: defaultWhitelist.rules,
     },
   };
+}
+
+export async function initProfileRulesFromDefaults(profileId: string): Promise<void> {
+  const paths = getRulesFilePaths(profileId);
+  await ensureRulesDir(paths.baseDir);
+  if (!existsSync(paths.blacklistPath) || !existsSync(paths.whitelistPath)) {
+    await writeBundle(paths, defaultRulesBundle());
+  }
+}
+
+export async function getRulesConfigBundle(profileId: string): Promise<RulesConfigBundle> {
+  const paths = getRulesFilePaths(profileId);
+  await ensureRulesDir(paths.baseDir);
+
+  const defaultBundle = defaultRulesBundle();
 
   if (!existsSync(paths.blacklistPath) || !existsSync(paths.whitelistPath)) {
     await writeBundle(paths, defaultBundle);
@@ -111,8 +123,11 @@ export async function getRulesConfigBundle(): Promise<RulesConfigBundle> {
   };
 }
 
-export async function saveRulesConfig(payload: SaveRulesPayload): Promise<RulesConfigBundle> {
-  const paths = getRulesFilePaths();
+export async function saveRulesConfig(
+  profileId: string,
+  payload: SaveRulesPayload,
+): Promise<RulesConfigBundle> {
+  const paths = getRulesFilePaths(profileId);
   await ensureRulesDir(paths.baseDir);
 
   const blacklist: BlacklistRuleFile = {
@@ -130,20 +145,20 @@ export async function saveRulesConfig(payload: SaveRulesPayload): Promise<RulesC
   return { blacklist, whitelist, files: paths };
 }
 
-export async function resetRulesConfigToDefault(): Promise<RulesConfigBundle> {
+export async function resetRulesConfigToDefault(profileId: string): Promise<RulesConfigBundle> {
   const defaultWhitelist = getDefaultWhitelistConfig();
-  return saveRulesConfig({
+  return saveRulesConfig(profileId, {
     blacklist: getDefaultBlacklistConfig(),
     whitelist: defaultWhitelist.rules,
     whitelistDefaultWeight: defaultWhitelist.defaultWeight,
   });
 }
 
-export async function openRulesConfigFile(_list: RuleListType): Promise<{ path: string }> {
-  const { baseDir } = getRulesFilePaths();
+export async function openRulesConfigFile(profileId: string, _list: RuleListType): Promise<{ path: string }> {
+  const { baseDir } = getRulesFilePaths(profileId);
   await ensureRulesDir(baseDir);
   if (!existsSync(baseDir)) {
-    await getRulesConfigBundle();
+    await getRulesConfigBundle(profileId);
   }
 
   const platform = process.platform;
@@ -155,4 +170,14 @@ export async function openRulesConfigFile(_list: RuleListType): Promise<{ path: 
     await execFileAsync("xdg-open", [baseDir]);
   }
   return { path: baseDir };
+}
+
+/** @deprecated legacy global rules — used only for migration reference */
+export function getLegacyRulesFilePaths() {
+  const baseDir = resolveToolConfigDir();
+  return {
+    baseDir,
+    blacklistPath: join(baseDir, "blacklist.json"),
+    whitelistPath: join(baseDir, "whitelist.json"),
+  };
 }

@@ -25,4 +25,13 @@ export const DEFAULT_SCAN_OPTIONS: Omit<ScanOptions, "startUrl"> = {
   clickSortTolerancePx: 8,
   apiErrorMinStatus: 500,
   urlExclude: loadUrlExclude(),
+  autoLoginEnabled: false,
+  loginProfile: undefined,
+  loginSelectors: {
+    username: "input[type='text'], input[name='username'], input[name='email']",
+    password: "input[type='password']",
+    submit: "button[type='submit'], button:has-text('登录'), button:has-text('Sign in')",
+  },
+  enableRecording: true,
+  enableFailureScreenshot: true,
 };

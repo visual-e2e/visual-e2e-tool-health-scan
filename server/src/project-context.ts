@@ -1,6 +1,8 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { DEFAULT_SCAN_OPTIONS, type LoginDefaults } from "./types.js";
 import { resolveE2eRoot } from "./paths.js";
+import { resolveClientStorageRoot } from "./storage/paths.js";
 
 export interface ProjectMeta {
   id: string;
@@ -19,6 +21,9 @@ export interface ProjectToolContext {
 function projectsDir(e2eRoot: string): string {
   const fromEnv = process.env.PROJECTS_DIR?.trim();
   if (fromEnv) return resolve(fromEnv);
+  // Client Host stores projects under Storage/projects
+  const clientProjects = join(resolveClientStorageRoot(), "projects");
+  if (existsSync(clientProjects)) return clientProjects;
   return join(e2eRoot, "projects");
 }
 
@@ -38,12 +43,29 @@ export function listProjects(): ProjectMeta[] {
     .sort((a, b) => a.id.localeCompare(b.id));
 }
 
-function readBaseUrl(envPath: string): string {
+function readEnvValue(envPath: string, key: string): string {
   if (!existsSync(envPath)) return "";
   const content = readFileSync(envPath, "utf-8");
-  const match = content.match(/^BASE_URL=(.*)$/m);
+  const match = content.match(new RegExp(`^${key}\\s*=\\s*(.*)$`, "im"));
   if (!match) return "";
   return match[1]!.trim().replace(/^["']|["']$/g, "");
+}
+
+function readBaseUrl(envPath: string): string {
+  return readEnvValue(envPath, "BASE_URL");
+}
+
+function readVariablesLogin(variablesPath: string): Record<string, string> {
+  if (!existsSync(variablesPath)) return {};
+  try {
+    const raw = JSON.parse(readFileSync(variablesPath, "utf-8")) as {
+      login?: Record<string, string>;
+      global?: Record<string, string>;
+    };
+    return { ...(raw.global ?? {}), ...(raw.login ?? {}) };
+  } catch {
+    return {};
+  }
 }
 
 export function resolveProjectToolContext(projectId: string): ProjectToolContext {
@@ -66,5 +88,38 @@ export function resolveProjectToolContext(projectId: string): ProjectToolContext
     baseUrl: readBaseUrl(join(root, ".env")),
     scenariosRelPath: `projects/${id}/scenarios`,
     root,
+  };
+}
+
+/** Login defaults from project .env + fixtures/variables.json */
+export function resolveProjectLoginDefaults(projectId: string): LoginDefaults {
+  const ctx = resolveProjectToolContext(projectId);
+  const envPath = join(ctx.root, ".env");
+  const variablesPath = join(ctx.root, "fixtures", "variables.json");
+  const loginVars = readVariablesLogin(variablesPath);
+
+  const username = readEnvValue(envPath, "USERNAME");
+  const password = readEnvValue(envPath, "PASSWORD");
+  const baseUrl = (ctx.baseUrl || loginVars.url || "").replace(/\/$/, "");
+  const loginPath = loginVars.login_path ?? "";
+  const startUrl =
+    baseUrl && loginPath
+      ? `${baseUrl}${loginPath.startsWith("/") ? loginPath : `/${loginPath}`}`
+      : baseUrl || undefined;
+
+  return {
+    startUrl,
+    projectId: ctx.projectId,
+    loginProfile:
+      username || password
+        ? { username, password, source: "rpc" }
+        : undefined,
+    loginSelectors: {
+      username:
+        loginVars.login_username_selector ?? DEFAULT_SCAN_OPTIONS.loginSelectors?.username,
+      password:
+        loginVars.login_password_selector ?? DEFAULT_SCAN_OPTIONS.loginSelectors?.password,
+      submit: loginVars.login_submit_selector ?? DEFAULT_SCAN_OPTIONS.loginSelectors?.submit,
+    },
   };
 }

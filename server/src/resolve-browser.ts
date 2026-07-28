@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { resolveConfigDir, resolveE2eRoot, resolveRuntime, resolveSettingsPath } from "./paths.js";
+import { resolveHostConfigDir, resolveE2eRoot, resolveRuntime, resolveSettingsPath } from "./paths.js";
 
 export interface BrowserSettings {
   headless: boolean;
@@ -71,7 +71,7 @@ function readBrowserSettings(configDir: string): BrowserSettings {
 
 export async function resolveBrowserLaunch(): Promise<BrowserLaunchResolution> {
   const e2eRoot = resolveE2eRoot();
-  const configDir = resolveConfigDir(e2eRoot);
+  const configDir = resolveHostConfigDir(e2eRoot);
   const runtime = resolveRuntime();
   const settings = readBrowserSettings(configDir);
 

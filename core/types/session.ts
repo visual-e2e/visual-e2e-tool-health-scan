@@ -27,6 +27,9 @@ export interface ScanSessionView {
   };
   progress?: string;
   error?: string;
+  reportId?: string;
+  videoPath?: string;
+  artifactsDir?: string;
   startedAt: string;
   updatedAt: string;
 }

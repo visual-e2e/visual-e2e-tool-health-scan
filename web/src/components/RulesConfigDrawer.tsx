@@ -185,15 +185,14 @@ export function RulesConfigDrawer({
       styles={{ body: { paddingTop: 12, height: "calc(100vh - 56px)" } }}
       extra={
         <Space>
-          <Button size="small" disabled={saving} onClick={() => onOpenRulesFile(activeList)}>
+          <Button disabled={saving} onClick={() => onOpenRulesFile(activeList)}>
             打开配置文件夹
           </Button>
-          <Button size="small" disabled={disabled || saving} onClick={onResetDefault}>
+          <Button disabled={disabled || saving} onClick={onResetDefault}>
             恢复默认值
           </Button>
           <Button
             type="primary"
-            size="small"
             icon={<PlusOutlined />}
             disabled={disabled || saving}
             onClick={openCreateModal}

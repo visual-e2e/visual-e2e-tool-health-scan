@@ -49,7 +49,7 @@ export function ScanControls({
     status === ScanStatus.Error;
 
   return (
-    <Space wrap>
+    <Space size={8} wrap>
       {!live && (
         <Button
           type="primary"
@@ -62,12 +62,7 @@ export function ScanControls({
         </Button>
       )}
       {status === ScanStatus.Ready && (
-        <Button
-          type="primary"
-          icon={<PlayCircleOutlined />}
-          loading={starting}
-          onClick={onStart}
-        >
+        <Button type="primary" icon={<PlayCircleOutlined />} loading={starting} onClick={onStart}>
           开始扫描
         </Button>
       )}
@@ -92,7 +87,7 @@ export function ScanControls({
         </Button>
       )}
       <Button icon={<DownloadOutlined />} disabled={!session || live} onClick={onExport}>
-        导出报告
+        导出
       </Button>
       {finished && (
         <Button

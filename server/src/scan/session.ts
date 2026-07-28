@@ -1,6 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { chromium } from "playwright";
 import { resolveBrowserLaunch } from "../resolve-browser.js";
+import { attemptAutoLogin } from "../auth/auto-login.js";
+import { saveReportFromSession } from "../report/report-store.js";
+import { touchProfileAfterScan, resolveProfileScanOptions } from "../profile/profile-store.js";
+import { ensureArtifactsDir } from "../report/artifact-writer.js";
 import {
   DEFAULT_SCAN_OPTIONS,
   getDefaultBlacklistConfig,
@@ -183,6 +187,15 @@ export function normalizeOptions(input: Partial<ScanOptions> & { startUrl: strin
       ? input.urlExclude.map(String)
       : [...DEFAULT_SCAN_OPTIONS.urlExclude],
     clickExclude: input.clickExclude,
+    autoLoginEnabled: input.autoLoginEnabled ?? DEFAULT_SCAN_OPTIONS.autoLoginEnabled,
+    loginProfile: input.loginProfile,
+    loginSelectors: {
+      ...DEFAULT_SCAN_OPTIONS.loginSelectors,
+      ...input.loginSelectors,
+    },
+    enableRecording: input.enableRecording ?? DEFAULT_SCAN_OPTIONS.enableRecording,
+    enableFailureScreenshot:
+      input.enableFailureScreenshot ?? DEFAULT_SCAN_OPTIONS.enableFailureScreenshot,
   };
 }
 
@@ -208,8 +221,12 @@ async function runScan(session: ActiveScan): Promise<void> {
     const context = await browser.newContext({
       viewport: launch.settings.viewport,
       locale: "zh-CN",
+      recordVideo: session.options.enableRecording
+        ? { dir: await ensureArtifactsDir(session.id), size: launch.settings.viewport }
+        : undefined,
     });
     session.context = context;
+    session.artifactsDir = await ensureArtifactsDir(session.id);
     context.setDefaultTimeout(launch.settings.timeout);
     context.setDefaultNavigationTimeout(launch.settings.timeout);
 
@@ -227,6 +244,21 @@ async function runScan(session: ActiveScan): Promise<void> {
     session.currentUrl = page.url();
     await page.waitForTimeout(session.options.settleMs);
     markPhase(session, PhaseName.Navigate, true);
+
+    if (session.options.autoLoginEnabled && session.options.loginProfile) {
+      session.progress = "尝试自动登录…";
+      touch(session);
+      const loginResult = await attemptAutoLogin(
+        page,
+        session.options.loginProfile,
+        session.options.loginSelectors,
+      );
+      session.progress = loginResult.message;
+      touch(session);
+      if (loginResult.ok) {
+        session.currentUrl = page.url();
+      }
+    }
 
     if (session.abort) {
       session.status = ScanStatus.Cancelled;
@@ -300,15 +332,56 @@ async function runScan(session: ActiveScan): Promise<void> {
     session.error = err instanceof Error ? err.message : String(err);
     session.progress = undefined;
   } finally {
+    if (session.page && session.context && session.options.enableRecording) {
+      const video = session.page.video();
+      if (video) {
+        try {
+          const videoPath = await video.path();
+          session.videoPath = videoPath;
+        } catch {
+          // video may not be ready yet
+        }
+      }
+    }
     touch(session);
+
+    if (
+      session.status === ScanStatus.Done ||
+      session.status === ScanStatus.Cancelled ||
+      session.status === ScanStatus.Error
+    ) {
+      try {
+        const view = toView(session);
+        const meta = await saveReportFromSession(view, {
+          profileId: session.profileId,
+        });
+        session.reportId = meta.id;
+        if (meta.videoPath) session.videoPath = meta.videoPath;
+        if (session.profileId) {
+          await touchProfileAfterScan(session.profileId, view.summary);
+        }
+      } catch (err) {
+        console.error("[health-scan] save report failed", err);
+      }
+    }
+
     await cleanupBrowser(session);
   }
 }
 
 export async function createScan(
-  input: Partial<ScanOptions> & { startUrl: string },
+  input: Partial<ScanOptions> & { startUrl?: string; profileId?: string },
 ): Promise<ReturnType<typeof toView>> {
-  const options = normalizeOptions(input);
+  let resolvedInput = input;
+  if (input.profileId) {
+    const fromProfile = await resolveProfileScanOptions(input.profileId);
+    resolvedInput = { ...fromProfile, profileId: input.profileId };
+  }
+
+  const startUrl = resolvedInput.startUrl?.trim();
+  if (!startUrl) throw new Error("startUrl 不能为空");
+
+  const options = normalizeOptions({ ...resolvedInput, startUrl });
   const id = randomUUID();
   const now = nowIso();
   const session: ActiveScan = {
@@ -330,6 +403,7 @@ export async function createScan(
     abort: false,
     pauseRequested: false,
     collecting: false,
+    profileId: input.profileId,
   };
   sessions.set(id, session);
   session.runPromise = runScan(session);

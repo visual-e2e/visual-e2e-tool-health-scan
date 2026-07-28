@@ -12,6 +12,16 @@ export interface NavigationStep {
   elementId?: string;
 }
 
+/** Default locator replay hints collected in browser */
+export interface LocatorHints {
+  tag: string;
+  stableClasses: string[];
+  ariaLabel?: string;
+  title?: string;
+  thyicon?: string;
+  nthOfType?: number;
+}
+
 export interface ClickTargetIdentity {
   targetId: string;
   label: string;
@@ -41,6 +51,7 @@ export interface ClickTargetIdentity {
     selectorSelf: string;
     parentChain: string[];
   };
+  locatorHints?: LocatorHints;
 }
 
 export interface MatchedRuleInfo {

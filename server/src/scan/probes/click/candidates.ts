@@ -104,6 +104,14 @@ export async function collectClickTargets(
           selectorSelf: string;
           parentChain: string[];
         };
+        locatorHints?: {
+          tag: string;
+          stableClasses: string[];
+          ariaLabel?: string;
+          title?: string;
+          thyicon?: string;
+          nthOfType?: number;
+        };
       }> = [];
       const seen = new Set<string>();
       const elementTokens = (node: Element): string => {
@@ -123,6 +131,29 @@ export async function collectClickTargets(
           cursor = cursor.parentElement;
         }
         return chain;
+      };
+      const stableClasses = (el: Element): string[] => {
+        const className = (el as HTMLElement).className;
+        if (typeof className !== "string") return [];
+        return className
+          .split(/\s+/)
+          .filter(Boolean)
+          .filter(
+            (c) =>
+              !/^ng-/.test(c) &&
+              !/^cdk-/.test(c) &&
+              !/^(active|focus|hover|selected|disabled|open)$/i.test(c),
+          )
+          .slice(0, 4);
+      };
+      const nthOfType = (el: Element): number | undefined => {
+        const parent = el.parentElement;
+        if (!parent) return undefined;
+        const tag = el.tagName.toLowerCase();
+        const siblings = Array.from(parent.children).filter((c) => c.tagName.toLowerCase() === tag);
+        if (siblings.length <= 1) return undefined;
+        const idx = siblings.indexOf(el);
+        return idx >= 0 ? idx + 1 : undefined;
       };
 
       for (const el of nodes) {
@@ -298,6 +329,14 @@ export async function collectClickTargets(
             attributes,
             selectorSelf,
             parentChain,
+          },
+          locatorHints: {
+            tag: clickEl.tagName.toLowerCase(),
+            stableClasses: stableClasses(clickEl),
+            ariaLabel: ariaLabel || undefined,
+            title: titleAttr || undefined,
+            thyicon: thyicon || undefined,
+            nthOfType: nthOfType(clickEl),
           },
         });
 

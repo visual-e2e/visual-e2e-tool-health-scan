@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
-import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { resolveClientStorageRoot } from "./storage/paths.js";
 
 export const Runtime = {
   Client: "client",
@@ -16,23 +16,23 @@ export function resolveE2eRoot(): string {
   return resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");
 }
 
-export function resolveClientStorageRoot(): string {
-  if (process.platform === "darwin") {
-    return join(homedir(), "Library", "Application Support", "visual-e2e-test", "Storage");
-  }
-  if (process.platform === "win32") {
-    const appdata = process.env.APPDATA;
-    if (appdata) return join(appdata, "visual-e2e-test", "Storage");
-  }
-  return join(homedir(), ".local", "share", "visual-e2e-test", "Storage");
-}
+export { resolveClientStorageRoot } from "./storage/paths.js";
 
-export function resolveConfigDir(e2eRoot: string): string {
+/**
+ * Host global config dir (Storage/config).
+ * Must be used for browser-runtime / settings — NOT tool-scoped config.
+ */
+export function resolveHostConfigDir(e2eRoot: string): string {
   const fromEnv = process.env.CONFIG_DIR?.trim();
   if (fromEnv) return resolve(fromEnv);
-  const clientConfig = join(resolveClientStorageRoot(), "config");
-  if (existsSync(clientConfig)) return clientConfig;
+  const hostConfig = join(resolveClientStorageRoot(), "config");
+  if (existsSync(hostConfig)) return hostConfig;
   return join(e2eRoot, "config");
+}
+
+/** @deprecated Prefer resolveHostConfigDir for browser; tool rules use profile paths. */
+export function resolveConfigDir(e2eRoot: string): string {
+  return resolveHostConfigDir(e2eRoot);
 }
 
 export function resolveRuntime(): Runtime {
