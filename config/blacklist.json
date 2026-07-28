@@ -1,0 +1,28 @@
+{
+  "version": 3,
+  "rules": [
+    {
+      "id": 1,
+      "title": "破坏性/交易操作",
+      "type": "text",
+      "op": "contains",
+      "values": ["删除", "注销", "退出", "登出", "支付", "付款", "提交订单", "清空"],
+      "description": "破坏性/交易操作"
+    },
+    {
+      "id": 2,
+      "title": "系统管理入口",
+      "type": "text",
+      "op": "contains",
+      "values": ["系统管理", "权限配置"]
+    },
+    {
+      "id": 3,
+      "title": "设置菜单 ID",
+      "type": "attribute",
+      "attr": "id",
+      "op": "equals",
+      "values": ["navsettings"]
+    }
+  ]
+}

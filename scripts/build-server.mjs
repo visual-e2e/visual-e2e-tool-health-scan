@@ -16,6 +16,7 @@ await build({
   format: "esm",
   outfile,
   minify: true,
+  keepNames: false,
   external: ["playwright", "playwright-core"],
   banner: {
     js: "import { createRequire } from 'module'; const require = createRequire(import.meta.url);",

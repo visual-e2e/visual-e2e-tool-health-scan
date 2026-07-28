@@ -1,0 +1,42 @@
+{
+  "version": 3,
+  "defaultWeight": 0,
+  "rules": [
+    {
+      "id": 1,
+      "title": "顶栏路由",
+      "type": "selector",
+      "op": "equals",
+      "values": ["a thy-nav-item"],
+      "weight": 90,
+      "description": "顶栏路由"
+    },
+    {
+      "id": 2,
+      "title": "侧栏菜单",
+      "type": "selector",
+      "op": "equals",
+      "values": ["thy-menu-item"],
+      "weight": 80,
+      "description": "侧栏菜单"
+    },
+    {
+      "id": 3,
+      "title": "浮层确认/关闭",
+      "type": "text",
+      "op": "equals",
+      "values": ["确定", "取消", "关闭"],
+      "weight": 70,
+      "description": "浮层确认/关闭"
+    },
+    {
+      "id": 4,
+      "title": "只读/查询类",
+      "type": "text",
+      "op": "contains",
+      "values": ["查询", "搜索", "重置", "刷新", "展开", "详情", "查看"],
+      "weight": 50,
+      "description": "只读/查询类"
+    }
+  ]
+}

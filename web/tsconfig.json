@@ -9,7 +9,8 @@
     "jsx": "react-jsx",
     "strict": true,
     "noEmit": true,
-    "isolatedModules": true
+    "isolatedModules": true,
+    "resolveJsonModule": true
   },
-  "include": ["src"]
+  "include": ["src", "../core", "../config"]
 }

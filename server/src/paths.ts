@@ -3,6 +3,13 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+export const Runtime = {
+  Client: "client",
+  Workspace: "workspace",
+} as const;
+
+export type Runtime = (typeof Runtime)[keyof typeof Runtime];
+
 export function resolveE2eRoot(): string {
   const fromEnv = process.env.E2E_ROOT?.trim();
   if (fromEnv) return resolve(fromEnv);
@@ -28,8 +35,8 @@ export function resolveConfigDir(e2eRoot: string): string {
   return join(e2eRoot, "config");
 }
 
-export function resolveRuntime(): "client" | "workspace" {
-  return process.env.E2E_RUNTIME === "workspace" ? "workspace" : "client";
+export function resolveRuntime(): Runtime {
+  return process.env.E2E_RUNTIME === Runtime.Workspace ? Runtime.Workspace : Runtime.Client;
 }
 
 export function resolveSettingsPath(configDir: string): string {

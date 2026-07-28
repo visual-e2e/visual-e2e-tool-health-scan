@@ -22,3 +22,45 @@ body {
   gap: 16px;
   margin-bottom: 16px;
 }
+
+.rule-action-edit {
+  color: #8c8c8c;
+}
+
+.rule-action-edit:hover {
+  color: #1677ff !important;
+}
+
+.rule-action-delete {
+  color: #8c8c8c;
+}
+
+.rule-action-delete:hover {
+  color: #ff4d4f !important;
+}
+
+.rule-value-add {
+  color: #8c8c8c;
+}
+
+.rule-value-add:hover {
+  color: #1677ff !important;
+}
+
+.rule-value-tag .rule-value-remove {
+  color: #8c8c8c;
+  transition: color 0.2s ease;
+}
+
+.rule-value-tag .rule-value-remove:hover {
+  color: #ff4d4f !important;
+}
+
+.rule-value-tag-editable {
+  cursor: pointer;
+}
+
+.rule-value-tag-editable:hover {
+  color: #1677ff;
+  border-color: #91caff;
+}

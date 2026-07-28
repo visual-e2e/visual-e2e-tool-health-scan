@@ -6,9 +6,10 @@
     "strict": true,
     "skipLibCheck": true,
     "esModuleInterop": true,
+    "resolveJsonModule": true,
     "outDir": "dist",
-    "rootDir": "src",
+    "rootDir": "..",
     "declaration": false
   },
-  "include": ["src/**/*"]
+  "include": ["src/**/*", "../core/**/*", "../config/**/*"]
 }

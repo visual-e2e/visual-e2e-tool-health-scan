@@ -2,14 +2,18 @@
   "id": "health-scan",
   "version": "1.0.0",
   "name": "健康扫描",
-  "description": "扫描静态资源 404、接口 5xx、页面错乱与失效点击",
+  "description": "扫描静态资源 404、接口报错、CSS/布局异常；黑白名单规则见 config/",
   "icon": "tool",
   "category": "test",
   "rpc": {
     "protocolVersion": 1
   },
   "capabilities": [
-    "project.context"
+    "project.context",
+    "project.list",
+    "project.variables",
+    "config.settings",
+    "config.browserRuntime"
   ],
   "ports": {
     "preferredProd": 7203,
@@ -20,7 +24,7 @@
   "main": "server/dist/index.js",
   "webRoot": "web/dist",
   "engines": {
-    "host": ">=1.4.0"
+    "host": ">=2.1.0"
   },
   "sandbox": {
     "allow": [
