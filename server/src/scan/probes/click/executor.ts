@@ -202,7 +202,7 @@ export async function runClickProbe(session: ActiveScan, page: Page): Promise<vo
     ) {
       screenshotPath = await captureFailureScreenshot(
         page,
-        session.projectId,
+        session.profileId || session.projectId,
         session.reportId || session.id,
         nextScored.target.targetId,
       );

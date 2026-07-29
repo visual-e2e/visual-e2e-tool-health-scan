@@ -1,7 +1,7 @@
 import Fastify from "fastify";
 import cors from "@fastify/cors";
 import fastifyStatic from "@fastify/static";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { listProjects, resolveProjectLoginDefaults, resolveProjectToolContext } from "./project-context.js";
@@ -57,6 +57,169 @@ const port = Number(process.env.TOOL_PORT ?? "3203");
 const host = "127.0.0.1";
 const serveWeb = process.env.SERVE_WEB === "1";
 const toolId = process.env.TOOL_ID ?? "health-scan";
+
+function escapeHtml(input: string): string {
+  return input
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function toAssetHref(sessionId: string, fullPath: string | undefined, baseDir: string): string {
+  if (!fullPath || !baseDir) return "";
+  if (!fullPath.startsWith(baseDir)) return "";
+  const rel = fullPath.slice(baseDir.length).replace(/^\/+/, "");
+  const safeRel = rel
+    .split("/")
+    .filter(Boolean)
+    .map((seg) => encodeURIComponent(seg))
+    .join("/");
+  return `/api/artifacts/${encodeURIComponent(sessionId)}/${safeRel}`;
+}
+
+function renderReportHtml(report: Awaited<ReturnType<typeof getReport>>): string {
+  if (!report || !report.session) {
+    return `<!doctype html><html><body><h2>报告不可用</h2></body></html>`;
+  }
+  const s = report.session;
+  const categoryLabel: Record<string, string> = {
+    network: "网络", layout: "布局", click: "点击", runtime: "运行时",
+  };
+  const categoryColor: Record<string, string> = {
+    network: "#2563eb", layout: "#d97706", click: "#7c3aed", runtime: "#dc2626",
+  };
+  const severityColor: Record<string, string> = { error: "#dc2626", warning: "#d97706" };
+  const outcomeColor: Record<string, string> = {
+    success: "#16a34a", failed: "#dc2626", skipped: "#6b7280",
+  };
+  const outcomeLabel: Record<string, string> = {
+    success: "成功", failed: "失败", skipped: "跳过",
+  };
+
+  const badge = (text: string, bg: string, fg = "#fff") =>
+    `<span style="display:inline-block;padding:2px 8px;border-radius:9999px;font-size:12px;font-weight:600;background:${bg};color:${fg}">${escapeHtml(text)}</span>`;
+
+  const issuesRows = (s.issues ?? [])
+    .map(
+      (i) => `<tr>
+        <td>${badge(categoryLabel[i.category] ?? i.category, categoryColor[i.category] ?? "#6b7280")}</td>
+        <td>${badge(i.severity === "error" ? "错误" : "警告", severityColor[i.severity] ?? "#6b7280")}</td>
+        <td>${escapeHtml(i.title)}</td>
+        <td style="font-size:12px;color:#6b7280">${escapeHtml(i.pageUrl || "")}</td>
+        <td><pre style="font-size:12px">${escapeHtml(i.detail || "")}</pre></td>
+      </tr>`,
+    )
+    .join("");
+  const actionsRows = (s.clickActions ?? [])
+    .map(
+      (a) => `<tr>
+        <td>${badge(outcomeLabel[a.outcome] ?? a.outcome, outcomeColor[a.outcome] ?? "#6b7280")}</td>
+        <td>${escapeHtml(a.target?.label || "")}</td>
+        <td style="color:#dc2626;font-size:12px">${escapeHtml(a.error || "")}</td>
+      </tr>`,
+    )
+    .join("");
+  const logPath = join(report.artifactsDir, "logs", "run.log");
+  const logs = existsSync(logPath) ? readFileSync(logPath, "utf-8") : "";
+  const videoHref = toAssetHref(report.sessionId, report.videoPath, report.artifactsDir);
+
+  const statusBg: Record<string, string> = {
+    done: "#16a34a", error: "#dc2626", cancelled: "#6b7280",
+    running: "#2563eb", stopping: "#d97706", ready: "#6b7280",
+  };
+
+  const statItems = [
+    { label: "网络", value: s.summary.network, color: "#2563eb" },
+    { label: "布局", value: s.summary.layout, color: "#d97706" },
+    { label: "点击", value: s.summary.click, color: "#7c3aed" },
+    { label: "运行时", value: s.summary.runtime, color: "#dc2626" },
+  ];
+  const statCards = statItems
+    .map(
+      (it) => `<div style="border:1px solid #e5e7eb;border-radius:8px;padding:16px 20px;background:#fff;border-left:4px solid ${it.color}">
+        <div style="font-size:13px;color:#6b7280;margin-bottom:4px">${it.label}问题</div>
+        <div style="font-size:28px;font-weight:700;color:${it.color}">${it.value}</div>
+      </div>`,
+    )
+    .join("");
+
+  return `<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>${escapeHtml(report.name)} - 健康扫描报告</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 0; background: #f6f8fa; color: #1f2328; }
+    .header { background: linear-gradient(135deg,#1e3a5f 0%,#2563eb 100%); color:#fff; padding: 24px 32px; }
+    .header h1 { margin:0 0 8px; font-size:22px; font-weight:700; }
+    .header-meta { display:flex; gap:24px; flex-wrap:wrap; font-size:13px; opacity:.85; }
+    .header-meta span b { opacity:.7; margin-right:4px; }
+    .status-badge { display:inline-block;padding:3px 10px;border-radius:9999px;font-size:12px;font-weight:600; }
+    .content { max-width:1100px; margin:0 auto; padding:24px 24px; }
+    .stat-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:20px; }
+    .card { border:1px solid #e5e7eb; border-radius:8px; padding:16px; margin-bottom:16px; background:#fff; }
+    .card h2 { margin:0 0 12px; font-size:15px; color:#374151; border-bottom:1px solid #f3f4f6; padding-bottom:8px; }
+    table { width:100%; border-collapse: collapse; font-size:13px; }
+    th { background:#f9fafb; color:#6b7280; font-weight:600; text-align:left; padding:8px 10px; border-bottom:2px solid #e5e7eb; }
+    td { padding:8px 10px; border-bottom:1px solid #f3f4f6; vertical-align:top; }
+    tr:last-child td { border-bottom:none; }
+    tr:hover td { background:#fafbff; }
+    pre { white-space:pre-wrap; word-break:break-word; margin:0; font-size:12px; line-height:1.6; }
+    video { width:100%; max-width:960px; border-radius:8px; background:#000; display:block; }
+    .log-pre { background:#0d1117; color:#e6edf3; border-radius:8px; padding:16px; font-size:12px; line-height:1.7; overflow-x:auto; }
+    @media(max-width:700px) { .stat-grid { grid-template-columns:repeat(2,1fr); } }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>${escapeHtml(report.name)}</h1>
+    <div class="header-meta">
+      <span><b>状态</b><span class="status-badge" style="background:${statusBg[report.status] ?? "#6b7280"}">${escapeHtml(report.status)}</span></span>
+      <span><b>时间</b>${escapeHtml(new Date(report.createdAt).toLocaleString("zh-CN"))}</span>
+      <span><b>入口</b>${escapeHtml(report.startUrl)}</span>
+    </div>
+  </div>
+
+  <div class="content">
+    <div class="stat-grid">${statCards}</div>
+
+    <div class="card">
+      <h2>🎬 录屏</h2>
+      ${
+        videoHref
+          ? `<video controls src="${videoHref}"></video>`
+          : `<div style="color:#9ca3af;padding:24px 0;text-align:center">未生成录屏</div>`
+      }
+    </div>
+
+    <div class="card">
+      <h2>🐛 问题列表</h2>
+      <table>
+        <thead><tr><th>类别</th><th>级别</th><th>标题</th><th>页面</th><th>详情</th></tr></thead>
+        <tbody>${issuesRows || `<tr><td colspan="5" style="text-align:center;color:#9ca3af;padding:20px">无问题</td></tr>`}</tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <h2>🖱 点击日志</h2>
+      <table>
+        <thead><tr><th>结果</th><th>目标</th><th>错误</th></tr></thead>
+        <tbody>${actionsRows || `<tr><td colspan="3" style="text-align:center;color:#9ca3af;padding:20px">无点击日志</td></tr>`}</tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <h2>📋 运行日志</h2>
+      <pre class="log-pre">${escapeHtml(logs || "暂无日志")}</pre>
+    </div>
+  </div>
+</body>
+</html>`;
+}
 
 const app = Fastify({ logger: true });
 await app.register(cors, { origin: true });
@@ -391,6 +554,13 @@ app.get<{ Params: { reportId: string } }>("/api/reports/:reportId", async (req, 
   const report = await getReport(req.params.reportId);
   if (!report) return reply.status(404).send({ error: "报告不存在" });
   return report;
+});
+
+app.get<{ Params: { reportId: string } }>("/api/reports/:reportId/html", async (req, reply) => {
+  const report = await getReport(req.params.reportId);
+  if (!report) return reply.status(404).send({ error: "报告不存在" });
+  const html = renderReportHtml(report);
+  return reply.header("content-type", "text/html; charset=utf-8").send(html);
 });
 
 app.patch<{ Params: { reportId: string }; Body: UpdateReportPayload }>(

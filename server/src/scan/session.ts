@@ -61,7 +61,7 @@ function buildSessionId(): string {
 async function logLine(session: ActiveScan, line: string): Promise<void> {
   const reportId = session.reportId || session.id;
   try {
-    await appendReportLogLine(session.projectId, reportId, `${nowIso()} ${line}`);
+    await appendReportLogLine(session.profileId || session.projectId, reportId, `${nowIso()} ${line}`);
   } catch {
     // do not fail scan for logging issues
   }
@@ -284,11 +284,11 @@ async function runScan(session: ActiveScan): Promise<void> {
       viewport: launch.settings.viewport,
       locale: "zh-CN",
       recordVideo: session.options.enableRecording
-        ? { dir: await ensureReportVideosDir(session.projectId, reportId), size: launch.settings.viewport }
+        ? { dir: await ensureReportVideosDir(session.profileId || session.projectId, reportId), size: launch.settings.viewport }
         : undefined,
     });
     session.context = context;
-    session.artifactsDir = await ensureArtifactsDir(session.projectId, reportId);
+    session.artifactsDir = await ensureArtifactsDir(session.profileId || session.projectId, reportId);
     context.setDefaultTimeout(launch.settings.timeout);
     context.setDefaultNavigationTimeout(launch.settings.timeout);
 
@@ -313,7 +313,7 @@ async function runScan(session: ActiveScan): Promise<void> {
             if (!key || key === lastRouteKey) return;
             lastRouteKey = key;
             routeSeq += 1;
-            await captureRouteScreenshot(page, session.projectId, reportId, routeSeq);
+            await captureRouteScreenshot(page, session.profileId || session.projectId, reportId, routeSeq);
             session.currentUrl = url;
             touch(session);
           } catch {

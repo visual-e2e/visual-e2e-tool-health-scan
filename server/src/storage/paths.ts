@@ -44,57 +44,57 @@ export function resolveToolReportsDir(toolId = resolveToolId()): string {
   return join(resolveToolStorageRoot(toolId), "reports");
 }
 
-export function normalizeProjectId(projectId?: string): string {
-  const raw = projectId?.trim();
+export function normalizeReportGroupId(groupId?: string): string {
+  const raw = groupId?.trim();
   return raw ? raw : "_unknown";
 }
 
 export function resolveReportDir(
-  projectId: string | undefined,
+  groupId: string | undefined,
   reportId: string,
   toolId = resolveToolId(),
 ): string {
-  return join(resolveToolReportsDir(toolId), normalizeProjectId(projectId), reportId);
+  return join(resolveToolReportsDir(toolId), normalizeReportGroupId(groupId), reportId);
 }
 
 export function resolveReportLogsDir(
-  projectId: string | undefined,
+  groupId: string | undefined,
   reportId: string,
   toolId = resolveToolId(),
 ): string {
-  return join(resolveReportDir(projectId, reportId, toolId), "logs");
+  return join(resolveReportDir(groupId, reportId, toolId), "logs");
 }
 
 export function resolveReportScreenshotsDir(
-  projectId: string | undefined,
+  groupId: string | undefined,
   reportId: string,
   toolId = resolveToolId(),
 ): string {
-  return join(resolveReportDir(projectId, reportId, toolId), "screenshots");
+  return join(resolveReportDir(groupId, reportId, toolId), "screenshots");
 }
 
 export function resolveReportVideosDir(
-  projectId: string | undefined,
+  groupId: string | undefined,
   reportId: string,
   toolId = resolveToolId(),
 ): string {
-  return join(resolveReportDir(projectId, reportId, toolId), "videos");
+  return join(resolveReportDir(groupId, reportId, toolId), "videos");
 }
 
 export function resolveReportJsonPath(
-  projectId: string | undefined,
+  groupId: string | undefined,
   reportId: string,
   toolId = resolveToolId(),
 ): string {
-  return join(resolveReportDir(projectId, reportId, toolId), "report.json");
+  return join(resolveReportDir(groupId, reportId, toolId), "report.json");
 }
 
 export function resolveReportLogPath(
-  projectId: string | undefined,
+  groupId: string | undefined,
   reportId: string,
   toolId = resolveToolId(),
 ): string {
-  return join(resolveReportLogsDir(projectId, reportId, toolId), "run.log");
+  return join(resolveReportLogsDir(groupId, reportId, toolId), "run.log");
 }
 
 export function resolveSessionArtifactsDir(sessionId: string, toolId = resolveToolId()): string {

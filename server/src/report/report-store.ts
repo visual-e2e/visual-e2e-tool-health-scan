@@ -51,8 +51,9 @@ export async function saveReportFromSession(
 ): Promise<ReportMeta> {
   const reportId = extra?.reportId?.trim() || randomUUID();
   const now = new Date().toISOString();
-  const artifactsDir = resolveReportDir(extra?.projectId, reportId);
-  const reportPath = await writeSessionReportJson(extra?.projectId, reportId, session);
+  const groupId = extra?.profileId?.trim() || extra?.projectId?.trim();
+  const artifactsDir = resolveReportDir(groupId, reportId);
+  const reportPath = await writeSessionReportJson(groupId, reportId, session);
   const copiedVideoPath = await copyVideoIfExists(session.videoPath, artifactsDir);
 
   const meta: ReportMeta = {

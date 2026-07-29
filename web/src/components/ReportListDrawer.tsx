@@ -1,4 +1,4 @@
-import { DeleteOutlined, EditOutlined, FolderOpenOutlined } from "@ant-design/icons";
+import { DeleteOutlined, EditOutlined, EyeOutlined, FolderOpenOutlined } from "@ant-design/icons";
 import {
   Button,
   Drawer,
@@ -115,9 +115,16 @@ export function ReportListDrawer({ open, onClose, profileId }: ReportListDrawerP
     },
     {
       title: "操作",
-      width: 120,
+      width: 160,
       render: (_, row) => (
         <Space>
+          <Button
+            type="text"
+            size="small"
+            icon={<EyeOutlined />}
+            onClick={() => window.open(`/api/reports/${row.id}/html`, "_blank")}
+            title="查看报告"
+          />
           <Button type="text" size="small" icon={<EditOutlined />} onClick={() => openEdit(row)} />
           <Popconfirm title="确定删除此报告？" onConfirm={() => handleDelete(row.id)}>
             <Button type="text" size="small" danger icon={<DeleteOutlined />} />
