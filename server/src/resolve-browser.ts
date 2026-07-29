@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { resolveHostConfigDir, resolveE2eRoot, resolveRuntime, resolveSettingsPath } from "./paths.js";
 
@@ -38,9 +38,15 @@ type BrowserRuntimeLib = {
     runtime: string,
   ) => Promise<{
     ok: boolean;
-    check: { path: string; version: string; hints: string[] };
+    check: { path: string; version: string; hints: string[]; mode?: string };
     env: Record<string, string>;
   }>;
+  resolveEffectiveManagedBrowsersDir?: (
+    configDir: string,
+    e2eRoot: string,
+    runtime: string,
+  ) => string;
+  resolveEffectiveFfmpegDir?: (configDir: string, e2eRoot: string, runtime: string) => string;
 };
 
 async function loadBrowserRuntimeLib(e2eRoot: string): Promise<BrowserRuntimeLib> {
@@ -69,39 +75,90 @@ function readBrowserSettings(configDir: string): BrowserSettings {
   }
 }
 
+function platformKey(): string {
+  if (process.platform === "darwin") {
+    return process.arch === "arm64" ? "darwin-arm64" : "darwin-x64";
+  }
+  if (process.platform === "win32") return "win32-x64";
+  return `${process.platform}-${process.arch}`;
+}
+
+/** Host managed browsers dir (Application Support/…/playwright-browsers/…). */
+function inferManagedBrowsersPath(configDir: string): string | undefined {
+  const key = platformKey();
+  const candidates = [
+    join(dirname(dirname(configDir)), "playwright-browsers", key),
+    join(dirname(configDir), "playwright-browsers", key),
+  ];
+  for (const dir of candidates) {
+    if (existsSync(dir)) return dir;
+  }
+  return undefined;
+}
+
+function withBrowsersPath(
+  env: Record<string, string>,
+  configDir: string,
+  fallback?: string,
+): Record<string, string> {
+  if (env.PLAYWRIGHT_BROWSERS_PATH?.trim()) return env;
+  const path =
+    process.env.PLAYWRIGHT_BROWSERS_PATH?.trim() ||
+    fallback?.trim() ||
+    inferManagedBrowsersPath(configDir);
+  if (!path) return env;
+  return { ...env, PLAYWRIGHT_BROWSERS_PATH: path };
+}
+
 export async function resolveBrowserLaunch(): Promise<BrowserLaunchResolution> {
   const e2eRoot = resolveE2eRoot();
   const configDir = resolveHostConfigDir(e2eRoot);
   const runtime = resolveRuntime();
   const settings = readBrowserSettings(configDir);
+  const runtimeMod = join(e2eRoot, "scripts/lib/browser-runtime.mjs");
 
-  const customExecutable = process.env.CHROMIUM_EXECUTABLE_PATH?.trim();
-  if (customExecutable) {
-    return {
-      ok: true,
-      executablePath: customExecutable,
-      env: { CHROMIUM_EXECUTABLE_PATH: customExecutable },
-      path: customExecutable,
-      version: "",
-      hints: [],
-      settings,
-    };
-  }
-
-  if (existsSync(join(e2eRoot, "scripts/lib/browser-runtime.mjs"))) {
+  // Prefer Host browser-runtime so PLAYWRIGHT_BROWSERS_PATH points at managed ffmpeg/chromium.
+  if (existsSync(runtimeMod)) {
     const lib = await loadBrowserRuntimeLib(e2eRoot);
     const resolved = await lib.resolveLaunchEnv(configDir, e2eRoot, runtime);
     const check = resolved.check ?? { path: "", version: "", hints: [] as string[] };
 
     if (resolved.ok) {
+      let env = withBrowsersPath({ ...resolved.env }, configDir);
+      const overrideExe = process.env.CHROMIUM_EXECUTABLE_PATH?.trim();
+      if (overrideExe) {
+        env = { ...env, CHROMIUM_EXECUTABLE_PATH: overrideExe };
+      }
       const executablePath =
-        resolved.env.CHROMIUM_EXECUTABLE_PATH?.trim() || check.path?.trim() || undefined;
+        env.CHROMIUM_EXECUTABLE_PATH?.trim() || check.path?.trim() || undefined;
       return {
         ok: true,
         executablePath,
-        env: resolved.env,
-        path: check.path,
+        env,
+        path: check.path || env.PLAYWRIGHT_BROWSERS_PATH || executablePath || "",
         version: check.version,
+        hints: [],
+        settings,
+      };
+    }
+
+    // Runtime not ready — still attach managed browsers path when caller only has chromium exe
+    const customExecutable = process.env.CHROMIUM_EXECUTABLE_PATH?.trim();
+    const managed =
+      lib.resolveEffectiveFfmpegDir?.(configDir, e2eRoot, runtime) ||
+      lib.resolveEffectiveManagedBrowsersDir?.(configDir, e2eRoot, runtime) ||
+      inferManagedBrowsersPath(configDir);
+    if (customExecutable && managed) {
+      return {
+        ok: true,
+        executablePath: customExecutable,
+        env: withBrowsersPath(
+          { CHROMIUM_EXECUTABLE_PATH: customExecutable },
+          configDir,
+          managed,
+        ),
+        path: customExecutable,
+        version: "",
         hints: [],
         settings,
       };
@@ -117,12 +174,21 @@ export async function resolveBrowserLaunch(): Promise<BrowserLaunchResolution> {
     };
   }
 
-  const browsersPath = process.env.PLAYWRIGHT_BROWSERS_PATH?.trim();
-  if (browsersPath) {
+  const browsersPath =
+    process.env.PLAYWRIGHT_BROWSERS_PATH?.trim() || inferManagedBrowsersPath(configDir);
+  const customExecutable = process.env.CHROMIUM_EXECUTABLE_PATH?.trim();
+
+  if (customExecutable || browsersPath) {
+    const env = withBrowsersPath(
+      customExecutable ? { CHROMIUM_EXECUTABLE_PATH: customExecutable } : {},
+      configDir,
+      browsersPath,
+    );
     return {
       ok: true,
-      env: { PLAYWRIGHT_BROWSERS_PATH: browsersPath },
-      path: browsersPath,
+      executablePath: customExecutable,
+      env,
+      path: customExecutable || browsersPath || "",
       version: "",
       hints: [],
       settings,
