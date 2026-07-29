@@ -6,14 +6,15 @@
   "icon": "tool",
   "category": "test",
   "rpc": {
-    "protocolVersion": 1
+    "protocolVersion": 2
   },
   "capabilities": [
     "project.context",
     "project.list",
     "project.variables",
     "config.settings",
-    "config.browserRuntime"
+    "config.browserRuntime",
+    "fs.dataDir"
   ],
   "ports": {
     "preferredProd": 7203,

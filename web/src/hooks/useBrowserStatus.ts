@@ -1,15 +1,21 @@
 import { useCallback, useEffect, useState } from "react";
-import { getRpcClient, isEmbedded } from "../rpc";
+import { getRpcClient, isEmbedded, type BrowserRuntimeResult } from "@visual-e2e/rpc-sdk";
 import { api } from "../api/client";
-import type { BrowserCheckResult } from "../rpc/protocol";
 
 interface BrowserStatus {
   ok: boolean;
   hints: string[];
+  browser_path?: string;
+  ffmpeg_path?: string;
 }
 
-function fromRpcResult(r: BrowserCheckResult): BrowserStatus {
-  return { ok: r.ok, hints: r.hints };
+function fromRpcResult(r: BrowserRuntimeResult): BrowserStatus {
+  return {
+    ok: r.check.ok,
+    hints: r.check.hints,
+    browser_path: r.browser_path,
+    ffmpeg_path: r.ffmpeg_path,
+  };
 }
 
 export function useBrowserStatus() {
@@ -22,7 +28,7 @@ export function useBrowserStatus() {
       if (isEmbedded()) {
         const rpc = getRpcClient();
         const res = await rpc.getBrowserRuntime();
-        setStatus(fromRpcResult(res.check));
+        setStatus(fromRpcResult(res));
       } else {
         const res = await api.browserStatus();
         setStatus({ ok: res.ok, hints: res.hints });
@@ -41,6 +47,8 @@ export function useBrowserStatus() {
   return {
     ok: status?.ok,
     hints: status?.hints,
+    browser_path: status?.browser_path,
+    ffmpeg_path: status?.ffmpeg_path,
     isFetching,
     refetch: fetch,
   };
