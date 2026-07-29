@@ -1,7 +1,16 @@
 import { Alert, Card, Space, Table, Tabs, Tag, Typography } from "antd";
 import { useMemo } from "react";
 import type { ColumnsType } from "antd/es/table";
-import { CATEGORY_LABEL, LIVE_STATUSES, STATUS_COLOR, STATUS_LABEL } from "../constants";
+import {
+  CATEGORY_LABEL,
+  CLICK_OUTCOME_COLOR,
+  formatClickOutcomeLabel,
+  LIVE_STATUSES,
+  REGISTRY_STATUS_COLOR,
+  REGISTRY_STATUS_LABEL,
+  STATUS_COLOR,
+  STATUS_LABEL,
+} from "../constants";
 import {
   FAILURE_CODE_LABEL,
   IssueSeverity,
@@ -9,6 +18,7 @@ import {
   formatClickTarget,
   type ClickActionLog,
   type FailureCode,
+  type InteractionRegistryItem,
   type IssueCategory,
   type ScanIssue,
   type ScanSession,
@@ -88,21 +98,11 @@ export function ScanProgressPanel({ session }: ScanProgressPanelProps) {
         title: "结果",
         dataIndex: "outcome",
         width: 100,
-        render: (o: string, row) => {
-          const color =
-            o === "success" ? "success" : o === "skipped" ? "default" : "error";
-          const label =
-            o === "success"
-              ? "成功"
-              : o === "skipped"
-                ? row.skipReason === "blacklist"
-                  ? "跳过(黑)"
-                  : "跳过"
-                : row.failureCode
-                  ? FAILURE_CODE_LABEL[row.failureCode as FailureCode]
-                  : "失败";
-          return <Tag color={color}>{label}</Tag>;
-        },
+        render: (_: unknown, row) => (
+          <Tag color={CLICK_OUTCOME_COLOR[row.outcome]}>
+            {formatClickOutcomeLabel(row)}
+          </Tag>
+        ),
       },
       {
         title: "规则",
@@ -116,7 +116,51 @@ export function ScanProgressPanel({ session }: ScanProgressPanelProps) {
     [],
   );
 
+  const registryColumns: ColumnsType<InteractionRegistryItem> = useMemo(
+    () => [
+      {
+        title: "层",
+        dataIndex: "layer",
+        width: 64,
+      },
+      {
+        title: "操作",
+        dataIndex: "label",
+        ellipsis: true,
+      },
+      {
+        title: "事件",
+        dataIndex: "eventType",
+        width: 100,
+        render: (v: string) => <Tag>{v}</Tag>,
+      },
+      {
+        title: "来源",
+        dataIndex: "source",
+        width: 100,
+      },
+      {
+        title: "状态",
+        dataIndex: "status",
+        width: 110,
+        render: (status: InteractionRegistryItem["status"]) => (
+          <Tag color={REGISTRY_STATUS_COLOR[status]}>
+            {REGISTRY_STATUS_LABEL[status]}
+          </Tag>
+        ),
+      },
+      {
+        title: "结果",
+        dataIndex: "lastResult",
+        width: 120,
+        render: (v?: string) => v ?? "—",
+      },
+    ],
+    [],
+  );
+
   const summary = session?.summary ?? EMPTY_SUMMARY;
+  const interactionRegistry = session?.interactionRegistry ?? [];
   const issues = session?.issues ?? [];
   const clickActions = session?.clickActions ?? [];
   const phases = session?.phases ?? [];
@@ -194,6 +238,36 @@ export function ScanProgressPanel({ session }: ScanProgressPanelProps) {
         size="small"
         items={[
           {
+            key: "registry",
+            label: `操作注册表 (${interactionRegistry.length})`,
+            children: (
+              <Table
+                size="small"
+                rowKey="id"
+                columns={registryColumns}
+                dataSource={interactionRegistry}
+                pagination={{ pageSize: 15, size: "small" }}
+                scroll={{ x: true }}
+                locale={{ emptyText: "暂无注册项" }}
+              />
+            ),
+          },
+          {
+            key: "actions",
+            label: `点击日志 (${clickActions.length})`,
+            children: (
+              <Table
+                size="small"
+                rowKey="id"
+                columns={actionColumns}
+                dataSource={clickActions}
+                pagination={{ pageSize: 15, size: "small" }}
+                scroll={{ x: true }}
+                locale={{ emptyText: "暂无点击记录" }}
+              />
+            ),
+          },
+          {
             key: "issues",
             label: `问题 (${issues.length})`,
             children: (
@@ -214,21 +288,6 @@ export function ScanProgressPanel({ session }: ScanProgressPanelProps) {
                         ? "扫描进行中…"
                         : "未发现问题",
                 }}
-              />
-            ),
-          },
-          {
-            key: "actions",
-            label: `点击日志 (${clickActions.length})`,
-            children: (
-              <Table
-                size="small"
-                rowKey="id"
-                columns={actionColumns}
-                dataSource={clickActions}
-                pagination={{ pageSize: 15, size: "small" }}
-                scroll={{ x: true }}
-                locale={{ emptyText: "暂无点击记录" }}
               />
             ),
           },

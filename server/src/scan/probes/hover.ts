@@ -24,6 +24,7 @@ import {
   fingerprintsDiffer,
 } from "../utils/page-fingerprint.js";
 import { sleep } from "../utils/sleep.js";
+import { BROWSER_EVAL_SHIM } from "../utils/browser-shim.js";
 
 interface HoverStyleSnapshot {
   found: boolean;
@@ -39,7 +40,8 @@ async function captureHoverStyleSnapshot(
   const cx = left + width / 2;
   const cy = top + height / 2;
   return page.evaluate(
-    ({ x, y }) => {
+    ({ x, y, shim }) => {
+      eval(shim);
       const el = document.elementFromPoint(x, y) as HTMLElement | null;
       if (!el) {
         return { found: false, signature: "", hasHoverRule: false };
@@ -106,7 +108,7 @@ async function captureHoverStyleSnapshot(
 
       return { found: true, signature, hasHoverRule };
     },
-    { x: cx, y: cy },
+    { x: cx, y: cy, shim: BROWSER_EVAL_SHIM },
   );
 }
 

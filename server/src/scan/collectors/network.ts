@@ -136,7 +136,7 @@ export async function runNetworkSnapshot(session: ActiveScan, page: Page): Promi
       detail: string;
       url?: string;
       resourceType?: string;
-      severity: IssueSeverity;
+      severity: string;
     }> = [];
 
     const entries = performance.getEntriesByType("resource") as PerformanceResourceTiming[];
@@ -153,7 +153,7 @@ export async function runNetworkSnapshot(session: ActiveScan, page: Page): Promi
           detail: `stylesheet 未出现在 Performance entries: ${href}`,
           url: href,
           resourceType: "stylesheet",
-          severity: IssueSeverity.Error,
+          severity: "error",
         });
       }
     }
@@ -165,7 +165,7 @@ export async function runNetworkSnapshot(session: ActiveScan, page: Page): Promi
           title: "资源 404",
           detail: entry.name,
           url: entry.name,
-          severity: IssueSeverity.Error,
+          severity: "error",
         });
       }
     }
@@ -178,7 +178,7 @@ export async function runNetworkSnapshot(session: ActiveScan, page: Page): Promi
     if (f.url && isIgnoredRequest(f.url, f.resourceType ?? "other", ignoreRules)) continue;
     addIssue(session, {
       category: IssueCategory.Network,
-      severity: f.severity,
+      severity: f.severity as IssueSeverity,
       title: f.title,
       detail: f.detail,
       pageUrl,

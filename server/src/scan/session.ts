@@ -26,6 +26,7 @@ import { runLayoutProbe } from "./probes/layout.js";
 import { runNavigationProbe } from "./probes/navigation.js";
 import { runHoverProbe } from "./probes/hover.js";
 import { runClickProbe } from "./probes/click/executor.js";
+import { runScanLoop } from "./engine/scan-loop.js";
 import {
   markPhase,
   nowIso,
@@ -238,6 +239,28 @@ export function normalizeOptions(input: Partial<ScanOptions> & { startUrl: strin
       input.enableRouteScreenshot ?? DEFAULT_SCAN_OPTIONS.enableRouteScreenshot,
     clickSuccessMode: input.clickSuccessMode ?? DEFAULT_SCAN_OPTIONS.clickSuccessMode,
     probeSelectors: input.probeSelectors ?? DEFAULT_SCAN_OPTIONS.probeSelectors,
+    framework: input.framework ?? DEFAULT_SCAN_OPTIONS.framework,
+    useEventTable: input.useEventTable ?? DEFAULT_SCAN_OPTIONS.useEventTable,
+    listSampleSize: Math.max(
+      1,
+      Math.min(20, Number(input.listSampleSize ?? DEFAULT_SCAN_OPTIONS.listSampleSize)),
+    ),
+    domChangeTimeoutMs: Math.max(
+      500,
+      Math.min(30_000, Number(input.domChangeTimeoutMs ?? DEFAULT_SCAN_OPTIONS.domChangeTimeoutMs)),
+    ),
+    executionMode: input.executionMode ?? DEFAULT_SCAN_OPTIONS.executionMode,
+    maxRetryPerItem: Math.max(
+      0,
+      Math.min(10, Number(input.maxRetryPerItem ?? DEFAULT_SCAN_OPTIONS.maxRetryPerItem)),
+    ),
+    maxRoundsWithoutProgress: Math.max(
+      1,
+      Math.min(
+        20,
+        Number(input.maxRoundsWithoutProgress ?? DEFAULT_SCAN_OPTIONS.maxRoundsWithoutProgress),
+      ),
+    ),
   };
 }
 
@@ -401,31 +424,37 @@ async function runScan(session: ActiveScan): Promise<void> {
       return;
     }
 
-    if (session.options.enableClick && session.options.enableNavigationProbe) {
-      if (!(await waitWhilePaused(session))) {
-        session.status = ScanStatus.Cancelled;
-        await logLine(session, "[system] 扫描已取消");
-        return;
-      }
-      await runNavigationProbe(session, page);
-    }
-
-    if (session.options.enableClick && session.options.enableHoverProbe) {
-      if (!(await waitWhilePaused(session))) {
-        session.status = ScanStatus.Cancelled;
-        await logLine(session, "[system] 扫描已取消");
-        return;
-      }
-      await runHoverProbe(session, page);
-    }
-
     if (session.options.enableClick) {
       if (!(await waitWhilePaused(session))) {
         session.status = ScanStatus.Cancelled;
         await logLine(session, "[system] 扫描已取消");
         return;
       }
-      await runClickProbe(session, page);
+
+      if (session.options.useEventTable !== false) {
+        // 新引擎：事件表驱动，统一处理导航/hover/点击
+        await runScanLoop(session, page, {
+          maxClicks: session.options.maxClicks,
+          framework: session.options.framework ?? "auto",
+          clickDelayMs: session.options.clickDelayMs,
+          postClickSettleMs: session.options.postClickSettleMs,
+          listSampleSize: session.options.listSampleSize ?? 2,
+          domChangeTimeoutMs: session.options.domChangeTimeoutMs ?? 3000,
+          enableFailureScreenshot: session.options.enableFailureScreenshot !== false,
+          useFingerprint: session.options.clickSuccessMode !== "action_ok",
+          executionMode: session.options.executionMode ?? "strict_registry",
+          maxRoundsWithoutProgress: session.options.maxRoundsWithoutProgress ?? 3,
+        });
+      } else {
+        // 降级：旧选择器模式
+        if (session.options.enableNavigationProbe) {
+          await runNavigationProbe(session, page);
+        }
+        if (session.options.enableHoverProbe) {
+          await runHoverProbe(session, page);
+        }
+        await runClickProbe(session, page);
+      }
     }
 
     if (session.abort) {
@@ -509,6 +538,7 @@ export async function createScan(
     currentUrl: options.startUrl,
     options,
     phases: buildPhases(options),
+    interactionRegistry: new Map(),
     issues: new Map(),
     clickActions: [],
     clicksTried: 0,

@@ -1,5 +1,12 @@
-import type { IssueCategory, ScanStatus } from "./types";
-import { IssueCategory as Cat, ScanStatus as Status } from "./types";
+import type { ClickActionLog, IssueCategory, RegistryStatus, ScanStatus } from "./types";
+import {
+  ClickOutcome,
+  FAILURE_CODE_LABEL,
+  IssueCategory as Cat,
+  RegistryStatus as Reg,
+  ScanStatus as Status,
+  SkipReason,
+} from "./types";
 
 export const LIVE_STATUSES = new Set<ScanStatus>([
   Status.Starting,
@@ -45,3 +52,33 @@ export const STATUS_COLOR: Record<ScanStatus, string> = {
   [Status.Cancelled]: "default",
   [Status.Error]: "error",
 };
+
+export const REGISTRY_STATUS_LABEL: Record<RegistryStatus, string> = {
+  [Reg.Pending]: "待执行",
+  [Reg.Executed]: "已执行",
+  [Reg.Deferred]: "延后(弹框优先)",
+  [Reg.Stale]: "已失效",
+  [Reg.Skipped]: "已跳过",
+};
+
+export const REGISTRY_STATUS_COLOR: Record<RegistryStatus, string> = {
+  [Reg.Pending]: "processing",
+  [Reg.Executed]: "success",
+  [Reg.Deferred]: "gold",
+  [Reg.Stale]: "default",
+  [Reg.Skipped]: "warning",
+};
+
+export const CLICK_OUTCOME_COLOR: Record<ClickOutcome, string> = {
+  [ClickOutcome.Success]: "success",
+  [ClickOutcome.Skipped]: "default",
+  [ClickOutcome.Failed]: "error",
+};
+
+export function formatClickOutcomeLabel(row: ClickActionLog): string {
+  if (row.outcome === ClickOutcome.Success) return "成功";
+  if (row.outcome === ClickOutcome.Skipped) {
+    return row.skipReason === SkipReason.Blacklist ? "跳过(黑)" : "跳过";
+  }
+  return row.failureCode ? FAILURE_CODE_LABEL[row.failureCode] : "失败";
+}

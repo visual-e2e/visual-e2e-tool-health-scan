@@ -5,6 +5,7 @@ import {
   IssueCategory,
   IssueSeverity,
   ScanStatus,
+  type InteractionRegistryItem,
   type ClickActionLog,
   type ClickTargetIdentity,
   type FailureCode,
@@ -21,6 +22,7 @@ export interface ActiveScan {
   currentUrl: string;
   options: ScanOptions;
   phases: ScanPhase[];
+  interactionRegistry: Map<string, InteractionRegistryItem>;
   issues: Map<string, ScanIssue>;
   clickActions: ClickActionLog[];
   clicksTried: number;
@@ -95,10 +97,34 @@ export function addClickAction(
   });
 }
 
+export function upsertInteractionRegistry(
+  session: ActiveScan,
+  item: Omit<InteractionRegistryItem, "lastUpdatedAt"> & { lastUpdatedAt?: string },
+): void {
+  const now = item.lastUpdatedAt ?? nowIso();
+  const existing = session.interactionRegistry.get(item.id);
+  if (!existing) {
+    session.interactionRegistry.set(item.id, {
+      ...item,
+      lastUpdatedAt: now,
+    });
+    return;
+  }
+  session.interactionRegistry.set(item.id, {
+    ...existing,
+    ...item,
+    lastUpdatedAt: now,
+  });
+}
+
 export function toView(session: ActiveScan): ScanSessionView {
   const issues = [...session.issues.values()].sort((a, b) =>
     a.timestamp.localeCompare(b.timestamp),
   );
+  const interactionRegistry = [...session.interactionRegistry.values()].sort((a, b) => {
+    if (a.layer !== b.layer) return b.layer - a.layer;
+    return b.lastUpdatedAt.localeCompare(a.lastUpdatedAt);
+  });
   return {
     sessionId: session.id,
     status: session.status,
@@ -106,6 +132,7 @@ export function toView(session: ActiveScan): ScanSessionView {
     currentUrl: session.currentUrl,
     options: session.options,
     phases: session.phases,
+    interactionRegistry,
     issues,
     clickActions: session.clickActions,
     summary: {
