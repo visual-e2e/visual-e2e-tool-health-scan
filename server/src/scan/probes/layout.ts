@@ -20,14 +20,14 @@ export async function runLayoutProbe(session: ActiveScan, page: Page): Promise<v
       eval(payload.shim);
       const doc = document.documentElement;
       const body = document.body;
-      const findings: Array<{ title: string; detail: string; severity: IssueSeverity }> = [];
+      const findings: Array<{ title: string; detail: string; severity: string }> = [];
 
       const scrollOverflow = doc.scrollWidth - doc.clientWidth;
       if (scrollOverflow > 24) {
         findings.push({
           title: "横向溢出",
           detail: `scrollWidth 超出 clientWidth ${scrollOverflow}px`,
-          severity: IssueSeverity.Warning,
+          severity: "warning",
         });
       }
 
@@ -37,7 +37,7 @@ export async function runLayoutProbe(session: ActiveScan, page: Page): Promise<v
         findings.push({
           title: "疑似白屏/空壳",
           detail: `body 子节点 ${children}，高度 ${Math.round(bodyHeight)}px`,
-          severity: IssueSeverity.Error,
+          severity: "error",
         });
       }
 
@@ -65,7 +65,7 @@ export async function runLayoutProbe(session: ActiveScan, page: Page): Promise<v
         findings.push({
           title: "CSS 疑似未生效",
           detail: `抽样 ${sample.length} 个 UI 元素中 ${unstyled} 个缺少常见样式`,
-          severity: IssueSeverity.Error,
+          severity: "error",
         });
       }
 
@@ -91,7 +91,7 @@ export async function runLayoutProbe(session: ActiveScan, page: Page): Promise<v
         findings.push({
           title: "可交互元素被遮挡",
           detail: `抽样发现 ${blocked} 个元素中心点被其它节点覆盖`,
-          severity: IssueSeverity.Warning,
+          severity: "warning",
         });
       }
 
@@ -103,7 +103,7 @@ export async function runLayoutProbe(session: ActiveScan, page: Page): Promise<v
   for (const f of result) {
     addIssue(session, {
       category: IssueCategory.Layout,
-      severity: f.severity,
+      severity: f.severity as IssueSeverity,
       title: f.title,
       detail: f.detail,
       pageUrl,
