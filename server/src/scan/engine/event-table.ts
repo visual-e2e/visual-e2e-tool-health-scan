@@ -6,6 +6,7 @@ import {
   classifyEntryScope,
   pickNextByScope,
   reconcileDeferredEntries,
+  type PickContext,
 } from "./scope-resolver.js";
 import type { OverlayInfo } from "../probes/click/overlay.js";
 
@@ -88,14 +89,13 @@ export class EventTable {
 
   nextPending(
     topOverlay: OverlayInfo | undefined,
-    globalExecuted: Set<string>,
-    applySemanticDedup = true,
+    pickCtx: PickContext,
   ): EventEntry | undefined {
-    return pickNextByScope(this.allValues(), topOverlay, globalExecuted, applySemanticDedup);
+    return pickNextByScope(this.allValues(), topOverlay, pickCtx);
   }
 
-  hasPending(globalExecuted: Set<string>, topOverlay?: OverlayInfo): boolean {
-    return this.nextPending(topOverlay, globalExecuted) !== undefined;
+  hasPending(topOverlay: OverlayInfo | undefined, pickCtx: PickContext): boolean {
+    return this.nextPending(topOverlay, pickCtx) !== undefined;
   }
 
   pendingEntries(): EventEntry[] {

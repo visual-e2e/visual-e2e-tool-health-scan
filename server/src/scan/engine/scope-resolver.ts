@@ -1,10 +1,27 @@
 import type { Page } from "playwright";
 import type { EventEntry } from "../../../../core/types/event-entry.js";
 import { RegistryStatus } from "../../../../core/enums/registry.js";
-import { getDefaultProbeSelectors, resolveProbeSelectors } from "../../types.js";
+import {
+  ClickPolicy,
+  getDefaultProbeSelectors,
+  resolveProbeSelectors,
+  type ResolvedProbeSelectors,
+} from "../../types.js";
 import { detectOverlayStack, type OverlayInfo } from "../probes/click/overlay.js";
+import { isSchedulableEntry } from "./registry-scorer.js";
 
 export type EntryScopeType = "overlay" | "page";
+
+export interface ScheduleContext {
+  clickPolicy: ClickPolicy;
+  defaultWeight: number;
+}
+
+export interface PickContext {
+  globalExecuted: Set<string>;
+  applySemanticDedup: boolean;
+  schedule: ScheduleContext;
+}
 
 export interface ScopedEntryMeta {
   scopeType: EntryScopeType;
@@ -66,8 +83,10 @@ export function classifyEntryScope(
   };
 }
 
-export async function getTopOverlay(page: Page): Promise<OverlayInfo | undefined> {
-  const probe = resolveProbeSelectors(getDefaultProbeSelectors());
+export async function getTopOverlay(
+  page: Page,
+  probe: ResolvedProbeSelectors = resolveProbeSelectors(getDefaultProbeSelectors()),
+): Promise<OverlayInfo | undefined> {
   const stack = await detectOverlayStack(page, probe.overlay, probe.overlayTitle);
   return stack[0];
 }
@@ -75,21 +94,19 @@ export async function getTopOverlay(page: Page): Promise<OverlayInfo | undefined
 export function pickNextByScope(
   entries: EventEntry[],
   topOverlay: OverlayInfo | undefined,
-  globalExecuted: Set<string>,
-  applySemanticDedup: boolean,
+  pickCtx: PickContext,
 ): EventEntry | undefined {
-  const pending = entries.filter(
-    (e) => e.status === RegistryStatus.Pending || e.status === RegistryStatus.Deferred,
-  );
-  const executable = pending.filter((e) => {
+  const { globalExecuted, applySemanticDedup, schedule } = pickCtx;
+  const executable = entries.filter((e) => {
     if (e.status === RegistryStatus.Deferred) return false;
+    if (!isSchedulableEntry(e, schedule)) return false;
     if (applySemanticDedup && globalExecuted.has(e.semanticId)) return false;
-    return true;
+    return e.status === RegistryStatus.Pending;
   });
 
   const overlayPending = executable.filter((e) => e.scopeType === "overlay");
   if (topOverlay && overlayPending.length > 0) {
-    return pickHighestLayer(overlayPending);
+    return pickBestEntry(overlayPending, schedule.defaultWeight);
   }
 
   if (topOverlay) {
@@ -98,22 +115,24 @@ export function pickNextByScope(
 
   const pagePending = executable.filter((e) => e.scopeType === "page");
   if (pagePending.length > 0) {
-    return pickHighestLayer(pagePending);
+    return pickBestEntry(pagePending, schedule.defaultWeight);
   }
 
   return undefined;
 }
 
-function pickHighestLayer(entries: EventEntry[]): EventEntry | undefined {
-  let maxLayer = -1;
-  let candidate: EventEntry | undefined;
-  for (const entry of entries) {
-    if (entry.layer > maxLayer) {
-      maxLayer = entry.layer;
-      candidate = entry;
-    }
-  }
-  return candidate;
+function pickBestEntry(entries: EventEntry[], defaultWeight: number): EventEntry | undefined {
+  if (entries.length === 0) return undefined;
+  return [...entries].sort((a, b) => compareEntryPriority(a, b, defaultWeight))[0];
+}
+
+function compareEntryPriority(a: EventEntry, b: EventEntry, defaultWeight: number): number {
+  if (b.layer !== a.layer) return b.layer - a.layer;
+  const scoreA = a.score ?? defaultWeight;
+  const scoreB = b.score ?? defaultWeight;
+  if (scoreB !== scoreA) return scoreB - scoreA;
+  if (a.rect.top !== b.rect.top) return a.rect.top - b.rect.top;
+  return a.rect.left - b.rect.left;
 }
 
 export function reconcileDeferredEntries(

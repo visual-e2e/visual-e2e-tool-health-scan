@@ -5,6 +5,7 @@
 ## [Unreleased]
 
 ### 新增
+- 事件表引擎接入 probe-selectors 补采与白名单/黑名单打分调度（layer → score → 位置）
 - 扫描引擎支持 overlay 优先调度：弹框打开时仅执行弹框内操作，页面操作标记为 `deferred` 延后
 - 操作注册表新增 `deferred` 状态展示「延后(弹框优先)」
 

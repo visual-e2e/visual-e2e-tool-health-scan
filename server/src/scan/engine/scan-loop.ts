@@ -24,8 +24,9 @@ import { captureFailureScreenshot } from "../../report/artifact-writer.js";
 import { classifyClickFailure } from "../../report/issue-classifier.js";
 import { capturePageFingerprint, fingerprintsDiffer } from "../utils/page-fingerprint.js";
 import { sleep } from "../utils/sleep.js";
-import { collectEventEntries } from "./event-collector.js";
+import { collectAllEventEntries } from "./entry-collection.js";
 import { EventTable } from "./event-table.js";
+import { applyRegistryScoring } from "./registry-scorer.js";
 import {
   classifyMutation,
   drainDomMutations,
@@ -36,9 +37,9 @@ import {
 import { closeTopOverlay } from "../probes/click/close.js";
 import { tryClickTarget, tryHoverTarget } from "../probes/click/resolver.js";
 import { tryRecoverFromFailure } from "../probes/click/recover.js";
-import type { EventEntry, Framework } from "../../../../core/types/event-entry.js";
+import type { EventEntry, EventEntryDraft, Framework } from "../../../../core/types/event-entry.js";
 import { RegistryStatus } from "../../../../core/enums/registry.js";
-import { getTopOverlay } from "./scope-resolver.js";
+import { getTopOverlay, type PickContext } from "./scope-resolver.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -273,24 +274,32 @@ export async function runScanLoop(
   session.progress = "采集页面事件表…";
   touch(session);
 
-  const initial = await collectEventEntries(page, opts.framework).catch(() => []);
-  const initialTopOverlay = await getTopOverlay(page);
-  const addedInitial = table.add(initial, initialTopOverlay);
-  upsertRegistryFromEntries(session, addedInitial);
-
-  logInfo(session, `[engine] 初始事件表 ${addedInitial.length} 条 (layer=0)`);
-
   const probe = session.options.probeSelectors ?? getDefaultProbeSelectors();
   const resolvedProbe = resolveProbeSelectors(probe);
 
+  const initialTopOverlay = await getTopOverlay(page, resolvedProbe);
+  const initialDrafts = await collectAllEventEntries(page, opts.framework, probe).catch(() => []);
+  const addedInitial = ingestDrafts(session, table, initialDrafts, initialTopOverlay);
+
+  logInfo(session, `[engine] 初始事件表 ${addedInitial.length} 条 (layer=0, probe补采已合并)`);
+
+  const pickCtx: PickContext = {
+    globalExecuted,
+    applySemanticDedup: dedupEnabled,
+    schedule: {
+      clickPolicy: session.options.clickPolicy,
+      defaultWeight: session.options.defaultWeight,
+    },
+  };
+
   async function syncScopeAndPick(): Promise<EventEntry | undefined> {
-    let topOverlay = await getTopOverlay(page);
+    let topOverlay = await getTopOverlay(page, resolvedProbe);
     const scopeChanged = table.reconcileScope(topOverlay);
     for (const e of scopeChanged) {
       upsertRegistryFromEntry(session, e);
     }
 
-    let entry = table.nextPending(topOverlay, globalExecuted, dedupEnabled);
+    let entry = table.nextPending(topOverlay, pickCtx);
     if (!entry && topOverlay && !table.hasOverlayPending()) {
       const closed = await closeTopOverlay(
         page,
@@ -308,12 +317,12 @@ export async function runScanLoop(
           failureCode: FailureCode.OverlayCloseFailed,
         });
       } else {
-        topOverlay = await getTopOverlay(page);
+        topOverlay = await getTopOverlay(page, resolvedProbe);
         const restored = table.reconcileScope(topOverlay);
         for (const e of restored) {
           upsertRegistryFromEntry(session, e);
         }
-        entry = table.nextPending(topOverlay, globalExecuted, dedupEnabled);
+        entry = table.nextPending(topOverlay, pickCtx);
       }
     }
     return entry;
@@ -388,7 +397,7 @@ export async function runScanLoop(
       roundsWithoutProgress = 0;
       const mutations = await drainDomMutations(page);
       const level = classifyMutation(mutations);
-      await refreshEventTable(session, page, table, opts, level);
+      await refreshEventTable(session, page, table, opts, level, probe, resolvedProbe);
       continue;
     }
 
@@ -427,8 +436,8 @@ export async function runScanLoop(
       pageUrl: page.url(),
       target: entryToIdentity(entry) as Parameters<typeof addClickAction>[1]["target"],
       outcome: result.outcome,
-      score: entry.priority,
-      matchedRules: [],
+      score: entry.score ?? entry.priority,
+      matchedRules: entry.matchedRules ?? [],
       error: result.error,
       failureCode: result.failureCode,
       screenshotPath: result.screenshotPath,
@@ -459,7 +468,7 @@ export async function runScanLoop(
     const level = classifyMutation(mutations);
 
     if (level !== "none") {
-      await refreshEventTable(session, page, table, opts, level);
+      await refreshEventTable(session, page, table, opts, level, probe, resolvedProbe);
     }
 
     // ⑧ 暂停检查
@@ -475,9 +484,24 @@ export async function runScanLoop(
   touch(session);
 }
 
-// ---------------------------------------------------------------------------
-// Event table refresh helper
-// ---------------------------------------------------------------------------
+function ingestDrafts(
+  session: ActiveScan,
+  table: EventTable,
+  drafts: EventEntryDraft[],
+  topOverlay: Awaited<ReturnType<typeof getTopOverlay>>,
+): EventEntry[] {
+  const added = table.add(drafts, topOverlay);
+  const skipped = applyRegistryScoring(added, session.options);
+  upsertRegistryFromEntries(session, added);
+  for (const entry of skipped) {
+    upsertRegistryFromEntry(session, entry, "blacklist");
+  }
+  const scopeChanged = table.reconcileScope(topOverlay);
+  for (const entry of scopeChanged) {
+    upsertRegistryFromEntry(session, entry);
+  }
+  return added;
+}
 
 async function refreshEventTable(
   session: ActiveScan,
@@ -485,43 +509,36 @@ async function refreshEventTable(
   table: EventTable,
   opts: Pick<ScanLoopOptions, "framework">,
   level: ReturnType<typeof classifyMutation>,
+  probe: ReturnType<typeof getDefaultProbeSelectors>,
+  resolvedProbe: ReturnType<typeof resolveProbeSelectors>,
 ): Promise<void> {
   table.nextLayer();
   const newLayer = table.currentLayer;
-  const topOverlay = await getTopOverlay(page);
+  const topOverlay = await getTopOverlay(page, resolvedProbe);
 
   if (level === "full") {
     logInfo(session, `[engine] 路由级 DOM 变化，重建事件表 (layer=${newLayer})`);
     table.clear();
     await injectDomObserver(page).catch(() => undefined);
-    const entries = await collectEventEntries(page, opts.framework).catch(() => []);
-    const added = table.add(entries, topOverlay);
-    upsertRegistryFromEntries(session, added);
-    const scopeChanged = table.reconcileScope(topOverlay);
-    for (const e of scopeChanged) {
-      upsertRegistryFromEntry(session, e);
-    }
+    const drafts = await collectAllEventEntries(page, opts.framework, probe).catch(() => []);
+    const added = ingestDrafts(session, table, drafts, topOverlay);
     logInfo(session, `[engine] 重建后事件表 ${added.length} 条`);
-  } else {
-    logInfo(session, `[engine] 局部 DOM 变化，增量更新 (layer=${newLayer})`);
-    const entries = await collectEventEntries(page, opts.framework).catch(() => []);
-    const beforeSize = table.size;
-    const added = table.add(entries, topOverlay);
-    upsertRegistryFromEntries(session, added);
-    const scopeChanged = table.reconcileScope(topOverlay);
-    for (const e of scopeChanged) {
-      upsertRegistryFromEntry(session, e);
-    }
-    const addedCount = table.size - beforeSize;
-    const staled = await table.prune(page);
-    for (const s of staled) {
-      upsertRegistryFromEntry(session, s);
-    }
-    logInfo(
-      session,
-      `[engine] 增量 +${addedCount} stale=${staled.length} total=${table.size} overlay=${topOverlay ? "open" : "closed"}`,
-    );
+    return;
   }
+
+  logInfo(session, `[engine] 局部 DOM 变化，增量更新 (layer=${newLayer})`);
+  const beforeSize = table.size;
+  const drafts = await collectAllEventEntries(page, opts.framework, probe).catch(() => []);
+  ingestDrafts(session, table, drafts, topOverlay);
+  const addedCount = table.size - beforeSize;
+  const staled = await table.prune(page);
+  for (const s of staled) {
+    upsertRegistryFromEntry(session, s);
+  }
+  logInfo(
+    session,
+    `[engine] 增量 +${addedCount} stale=${staled.length} total=${table.size} overlay=${topOverlay ? "open" : "closed"}`,
+  );
 }
 
 // ---------------------------------------------------------------------------
