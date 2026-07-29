@@ -1,6 +1,8 @@
 import type { ClickPolicy } from "../enums/click.js";
-
+import type { ClickSuccessMode } from "../enums/issue.js";
 import type { ClickRuleConfig } from "./click-rule-config.js";
+import type { IgnoreRequestRule } from "./ignore-request.js";
+import type { ProbeSelectorsConfig } from "./probe-selectors.js";
 
 export interface LoginSelectors {
   username?: string;
@@ -21,6 +23,7 @@ export interface ScanOptions {
   enableLayout: boolean;
   enableClick: boolean;
   enableNavigationProbe: boolean;
+  enableHoverProbe: boolean;
   maxClicks: number;
   maxOverlayDepth: number;
   clickDelayMs: number;
@@ -36,7 +39,8 @@ export interface ScanOptions {
   whitelistDefaultWeight: number;
   clickSortTolerancePx: number;
   apiErrorMinStatus: 400 | 500;
-  urlExclude: string[];
+  /** Rules for ignoring network issues (url-exclude.json) */
+  ignoreRequestRules: IgnoreRequestRule[];
   /** @deprecated use blacklistRules */
   clickExclude?: string[];
   autoLoginEnabled?: boolean;
@@ -44,4 +48,7 @@ export interface ScanOptions {
   loginSelectors?: LoginSelectors;
   enableRecording?: boolean;
   enableFailureScreenshot?: boolean;
+  enableRouteScreenshot?: boolean;
+  clickSuccessMode?: ClickSuccessMode;
+  probeSelectors?: ProbeSelectorsConfig;
 }

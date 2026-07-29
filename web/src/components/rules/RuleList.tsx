@@ -1,10 +1,6 @@
-import { Button, Card, Space, Tag, Typography } from "antd";
-import { DeleteOutlined, EditOutlined } from "@ant-design/icons";
 import { RuleListType, type ClickRuleConfig } from "../../types";
-import {
-  RuleEditorBody,
-  RULE_TYPE_LABEL,
-} from "./RuleEditors";
+import { RuleEditorBody, RULE_TYPE_LABEL } from "./RuleEditors";
+import { RuleCard, RuleCardList } from "./RuleCard";
 
 interface RuleListProps {
   rules: ClickRuleConfig[];
@@ -21,43 +17,16 @@ export function RuleList({ rules, list, disabled, onEditMeta, onDelete, onChange
   };
 
   return (
-    <Space direction="vertical" style={{ width: "100%" }} size="middle">
-      {rules.length === 0 && (
-        <Typography.Text type="secondary">暂无规则，请点击右上角“添加规则”</Typography.Text>
-      )}
+    <RuleCardList empty={rules.length === 0}>
       {rules.map((rule, index) => (
-        <Card
+        <RuleCard
           key={rule.id}
-          size="small"
-          title={
-            <Space>
-              <Tag color="blue">{RULE_TYPE_LABEL[rule.type]}</Tag>
-              <Typography.Text strong>{rule.title}</Typography.Text>
-              {rule.description ? (
-                <Typography.Text type="secondary">{rule.description}</Typography.Text>
-              ) : null}
-            </Space>
-          }
-          extra={
-            <Space size={4}>
-              <Button
-                type="text"
-                size="small"
-                className="rule-action-edit"
-                icon={<EditOutlined />}
-                disabled={disabled}
-                onClick={() => onEditMeta(rule)}
-              />
-              <Button
-                type="text"
-                size="small"
-                className="rule-action-delete"
-                icon={<DeleteOutlined />}
-                disabled={disabled}
-                onClick={() => onDelete(rule)}
-              />
-            </Space>
-          }
+          title={rule.title}
+          description={rule.description}
+          tags={[{ text: RULE_TYPE_LABEL[rule.type], color: "blue" }]}
+          disabled={disabled}
+          onEdit={() => onEditMeta(rule)}
+          onDelete={() => onDelete(rule)}
         >
           <RuleEditorBody
             rule={rule}
@@ -65,8 +34,8 @@ export function RuleList({ rules, list, disabled, onEditMeta, onDelete, onChange
             showWeight={list === RuleListType.Whitelist}
             onChange={(next) => update(index, next)}
           />
-        </Card>
+        </RuleCard>
       ))}
-    </Space>
+    </RuleCardList>
   );
 }

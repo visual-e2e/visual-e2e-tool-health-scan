@@ -3,3 +3,4 @@ export * from "./issue.js";
 export * from "./status.js";
 export * from "./identity.js";
 export * from "./rule.js";
+export * from "./rule-module.js";

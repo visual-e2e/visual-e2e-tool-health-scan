@@ -99,3 +99,29 @@ export async function tryClickTarget(
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
 }
+
+export async function tryHoverTarget(
+  page: Page,
+  identity: ClickTargetIdentity,
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const locator = await resolveTarget(page, identity);
+    if (locator) {
+      await locator.scrollIntoViewIfNeeded({ timeout: 2000 }).catch(() => undefined);
+      await locator.hover({ timeout: 2500 });
+      return { ok: true };
+    }
+
+    const { top, left, width, height } = identity.position;
+    if (width > 4 && height > 4) {
+      const cx = left + width / 2;
+      const cy = top + height / 2;
+      await page.mouse.move(cx, cy);
+      return { ok: true };
+    }
+
+    return { ok: false, error: "无法定位元素" };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}

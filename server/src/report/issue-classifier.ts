@@ -3,6 +3,9 @@ import { FailureCode } from "../types.js";
 export function classifyClickFailure(error?: string): FailureCode {
   if (!error) return FailureCode.UnresolvedTarget;
   const lower = error.toLowerCase();
+  if (error.includes("无明显变化") || error.includes("无页面变化")) {
+    return FailureCode.NoVisibleEffect;
+  }
   if (error.includes("无法定位")) return FailureCode.UnresolvedTarget;
   if (lower.includes("intercepts pointer")) return FailureCode.PointerIntercepted;
   if (lower.includes("timeout")) return FailureCode.ClickTimeout;
@@ -19,4 +22,5 @@ export const FAILURE_CODE_LABEL: Record<FailureCode, string> = {
   [FailureCode.OutOfScope]: "不在当前作用域",
   [FailureCode.ClickTimeout]: "点击超时",
   [FailureCode.OverlayCloseFailed]: "浮层关闭失败",
+  [FailureCode.NoVisibleEffect]: "点击无页面变化",
 };

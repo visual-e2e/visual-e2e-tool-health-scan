@@ -1,5 +1,6 @@
 import type { Page } from "playwright";
 import { BROWSER_EVAL_SHIM } from "../../utils/browser-shim.js";
+import { getDefaultProbeSelectors, resolveProbeSelectors } from "../../../types.js";
 
 export interface OverlayInfo {
   selector: string;
@@ -9,37 +10,18 @@ export interface OverlayInfo {
   rect: { top: number; left: number; width: number; height: number };
 }
 
-const OVERLAY_CANDIDATE_SELECTORS = [
-  "thy-dialog-container",
-  ".cdk-overlay-pane",
-  '[role="dialog"][aria-modal="true"]',
-  '[role="dialog"]',
-  ".ant-modal-wrap",
-  ".ant-modal-content",
-  ".ant-drawer-content",
-  ".modal",
-  ".overlay",
-  ".popup",
-];
+const defaultResolved = () => resolveProbeSelectors(getDefaultProbeSelectors());
 
-const CLOSE_HINT_SELECTORS = [
-  'a.thy-action[thyicon="close"]',
-  ".thy-icon-close",
-  "button.ant-modal-close",
-  ".ant-modal-close",
-  '[aria-label="关闭"]',
-  '[aria-label="Close"]',
-  '[aria-label="close"]',
-  'button[thyicon="close"]',
-];
-
-export { CLOSE_HINT_SELECTORS, OVERLAY_CANDIDATE_SELECTORS };
-
-export async function detectOverlayStack(page: Page): Promise<OverlayInfo[]> {
+export async function detectOverlayStack(
+  page: Page,
+  overlaySelectors: string[] = defaultResolved().overlay,
+  overlayTitleSelectors: string[] = defaultResolved().overlayTitle,
+): Promise<OverlayInfo[]> {
   return page.evaluate(
-    (payload: { shim: string; selectors: string[] }) => {
+    (payload: { shim: string; selectors: string[]; titleSels: string[] }) => {
       eval(payload.shim);
       const selectors = payload.selectors;
+      const titleSels = payload.titleSels;
       const found: Array<{
         selector: string;
         layer: number;
@@ -50,7 +32,13 @@ export async function detectOverlayStack(page: Page): Promise<OverlayInfo[]> {
       const seen = new Set<Element>();
 
       for (const sel of selectors) {
-        for (const el of document.querySelectorAll(sel)) {
+        let nodes: NodeListOf<Element>;
+        try {
+          nodes = document.querySelectorAll(sel);
+        } catch {
+          continue;
+        }
+        for (const el of nodes) {
           if (seen.has(el)) continue;
           seen.add(el);
           const style = window.getComputedStyle(el as HTMLElement);
@@ -71,16 +59,18 @@ export async function detectOverlayStack(page: Page): Promise<OverlayInfo[]> {
 
           let scopeLabel = "浮层";
           const role = el.getAttribute("role");
-          if (role === "dialog") {
-            const title = el.querySelector(
-              ".ant-modal-title, .thy-dialog-header, [class*='title'], h1, h2, h3",
-            );
+          if (role === "dialog" || titleSels.length) {
+            let title: Element | null = null;
+            for (const ts of titleSels) {
+              try {
+                title = el.querySelector(ts);
+              } catch {
+                continue;
+              }
+              if (title?.textContent?.trim()) break;
+            }
             const t = title?.textContent?.trim();
-            scopeLabel = t ? `弹框：${t.slice(0, 40)}` : "弹框";
-          } else if (el.matches("thy-dialog-container")) {
-            scopeLabel = "弹框";
-          } else if (el.matches(".ant-drawer-content")) {
-            scopeLabel = "抽屉";
+            scopeLabel = t ? `弹框：${t.slice(0, 40)}` : role === "dialog" ? "弹框" : "浮层";
           }
 
           found.push({
@@ -98,14 +88,21 @@ export async function detectOverlayStack(page: Page): Promise<OverlayInfo[]> {
         }
       }
 
-      found.sort((a, b) => b.zIndex - a.zIndex || b.rect.width * b.rect.height - a.rect.width * a.rect.height);
+      found.sort(
+        (a, b) =>
+          b.zIndex - a.zIndex || b.rect.width * b.rect.height - a.rect.width * a.rect.height,
+      );
       return found.map((o, i) => ({ ...o, layer: i + 1 }));
     },
-    { shim: BROWSER_EVAL_SHIM, selectors: OVERLAY_CANDIDATE_SELECTORS },
+    { shim: BROWSER_EVAL_SHIM, selectors: overlaySelectors, titleSels: overlayTitleSelectors },
   );
 }
 
-export async function hasOpenOverlay(page: Page): Promise<boolean> {
-  const stack = await detectOverlayStack(page);
+export async function hasOpenOverlay(
+  page: Page,
+  overlaySelectors?: string[],
+  overlayTitleSelectors?: string[],
+): Promise<boolean> {
+  const stack = await detectOverlayStack(page, overlaySelectors, overlayTitleSelectors);
   return stack.length > 0;
 }

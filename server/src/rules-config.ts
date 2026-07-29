@@ -8,6 +8,7 @@ import {
   getDefaultBlacklistConfig,
   getDefaultWhitelistConfig,
   RuleListType,
+  RuleModuleType,
   type BlacklistRuleFile,
   type ClickRuleConfig,
   type RuleOp,
@@ -63,15 +64,20 @@ async function writeBundle(
   await writeFile(paths.whitelistPath, `${JSON.stringify(bundle.whitelist, null, 2)}\n`, "utf-8");
 }
 
-function defaultRulesBundle() {
+function defaultRulesBundle(): {
+  blacklist: BlacklistRuleFile;
+  whitelist: WhitelistRuleFile;
+} {
   const defaultWhitelist = getDefaultWhitelistConfig();
   return {
     blacklist: {
-      version: 3 as const,
+      version: 3,
+      type: RuleModuleType.Blacklist,
       rules: getDefaultBlacklistConfig(),
     },
     whitelist: {
-      version: 3 as const,
+      version: 3,
+      type: RuleModuleType.Whitelist,
       defaultWeight: defaultWhitelist.defaultWeight,
       rules: defaultWhitelist.rules,
     },
@@ -106,10 +112,12 @@ export async function getRulesConfigBundle(profileId: string): Promise<RulesConf
 
   const blacklist: BlacklistRuleFile = {
     version: 3,
+    type: RuleModuleType.Blacklist,
     rules: (blackJson.rules ?? []).map(normalizeRule),
   };
   const whitelist: WhitelistRuleFile = {
     version: 3,
+    type: RuleModuleType.Whitelist,
     defaultWeight: Number(whiteJson.defaultWeight ?? 0),
     rules: (whiteJson.rules ?? []).map(normalizeRule),
   };
@@ -132,10 +140,12 @@ export async function saveRulesConfig(
 
   const blacklist: BlacklistRuleFile = {
     version: 3,
+    type: RuleModuleType.Blacklist,
     rules: payload.blacklist.map(normalizeRule),
   };
   const whitelist: WhitelistRuleFile = {
     version: 3,
+    type: RuleModuleType.Whitelist,
     defaultWeight: Number(payload.whitelistDefaultWeight ?? 0),
     rules: payload.whitelist.map(normalizeRule),
   };

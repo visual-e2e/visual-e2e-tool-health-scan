@@ -4,7 +4,7 @@ import { resolveBrowserLaunch } from "../resolve-browser.js";
 import { attemptAutoLogin } from "../auth/auto-login.js";
 import { saveReportFromSession } from "../report/report-store.js";
 import { touchProfileAfterScan, resolveProfileScanOptions } from "../profile/profile-store.js";
-import { ensureArtifactsDir } from "../report/artifact-writer.js";
+import { ensureArtifactsDir, captureRouteScreenshot } from "../report/artifact-writer.js";
 import {
   DEFAULT_SCAN_OPTIONS,
   getDefaultBlacklistConfig,
@@ -17,9 +17,10 @@ import {
   type ScanOptions,
   type ScanPhase,
 } from "../types.js";
-import { attachCollectors, compileUrlExcludes, runNetworkSnapshot } from "./collectors/network.js";
+import { attachCollectors, resolveIgnoreRequestRules, runNetworkSnapshot } from "./collectors/network.js";
 import { runLayoutProbe } from "./probes/layout.js";
 import { runNavigationProbe } from "./probes/navigation.js";
+import { runHoverProbe } from "./probes/hover.js";
 import { runClickProbe } from "./probes/click/executor.js";
 import {
   markPhase,
@@ -92,6 +93,9 @@ function buildPhases(options: ScanOptions): ScanPhase[] {
   if (options.enableClick && options.enableNavigationProbe) {
     phases.push({ name: PhaseName.Navigation, label: "导航探测", done: false });
   }
+  if (options.enableClick && options.enableHoverProbe) {
+    phases.push({ name: PhaseName.Hover, label: "悬停探测", done: false });
+  }
   if (options.enableClick) phases.push({ name: PhaseName.Click, label: "交互检查", done: false });
   return phases;
 }
@@ -148,6 +152,7 @@ export function normalizeOptions(input: Partial<ScanOptions> & { startUrl: strin
     enableClick: input.enableClick ?? DEFAULT_SCAN_OPTIONS.enableClick,
     enableNavigationProbe:
       input.enableNavigationProbe ?? DEFAULT_SCAN_OPTIONS.enableNavigationProbe,
+    enableHoverProbe: input.enableHoverProbe ?? DEFAULT_SCAN_OPTIONS.enableHoverProbe,
     maxClicks: Math.max(1, Number(input.maxClicks ?? DEFAULT_SCAN_OPTIONS.maxClicks)),
     maxOverlayDepth: Math.max(
       1,
@@ -183,9 +188,9 @@ export function normalizeOptions(input: Partial<ScanOptions> & { startUrl: strin
     ),
     apiErrorMinStatus:
       input.apiErrorMinStatus === 400 ? 400 : DEFAULT_SCAN_OPTIONS.apiErrorMinStatus,
-    urlExclude: Array.isArray(input.urlExclude)
-      ? input.urlExclude.map(String)
-      : [...DEFAULT_SCAN_OPTIONS.urlExclude],
+    ignoreRequestRules: Array.isArray(input.ignoreRequestRules)
+      ? input.ignoreRequestRules
+      : [...DEFAULT_SCAN_OPTIONS.ignoreRequestRules],
     clickExclude: input.clickExclude,
     autoLoginEnabled: input.autoLoginEnabled ?? DEFAULT_SCAN_OPTIONS.autoLoginEnabled,
     loginProfile: input.loginProfile,
@@ -196,6 +201,10 @@ export function normalizeOptions(input: Partial<ScanOptions> & { startUrl: strin
     enableRecording: input.enableRecording ?? DEFAULT_SCAN_OPTIONS.enableRecording,
     enableFailureScreenshot:
       input.enableFailureScreenshot ?? DEFAULT_SCAN_OPTIONS.enableFailureScreenshot,
+    enableRouteScreenshot:
+      input.enableRouteScreenshot ?? DEFAULT_SCAN_OPTIONS.enableRouteScreenshot,
+    clickSuccessMode: input.clickSuccessMode ?? DEFAULT_SCAN_OPTIONS.clickSuccessMode,
+    probeSelectors: input.probeSelectors ?? DEFAULT_SCAN_OPTIONS.probeSelectors,
   };
 }
 
@@ -208,6 +217,12 @@ async function runScan(session: ActiveScan): Promise<void> {
     const launch = await resolveBrowserLaunch();
     if (!launch.ok) {
       throw new Error(launch.hints.join("; ") || "浏览器未就绪");
+    }
+
+    // Playwright resolves ffmpeg via process.env.PLAYWRIGHT_BROWSERS_PATH
+    // (same as Host / scenario-recorder), not via chromium.launch({ env }).
+    for (const [key, value] of Object.entries(launch.env)) {
+      process.env[key] = value;
     }
 
     const browser = await chromium.launch({
@@ -233,8 +248,36 @@ async function runScan(session: ActiveScan): Promise<void> {
     const page = await context.newPage();
     session.page = page;
 
-    const excludes = compileUrlExcludes(session.options);
-    attachCollectors(session, page, excludes);
+    if (session.options.enableRouteScreenshot) {
+      let lastRouteKey = "";
+      let routeSeq = 0;
+      page.on("framenavigated", (frame) => {
+        if (frame !== page.mainFrame()) return;
+        void (async () => {
+          try {
+            const url = page.url();
+            let key = url;
+            try {
+              const u = new URL(url);
+              key = `${u.origin}${u.pathname}${u.search}`;
+            } catch {
+              // keep raw
+            }
+            if (!key || key === lastRouteKey) return;
+            lastRouteKey = key;
+            routeSeq += 1;
+            await captureRouteScreenshot(page, session.id, routeSeq);
+            session.currentUrl = url;
+            touch(session);
+          } catch {
+            // ignore screenshot errors
+          }
+        })();
+      });
+    }
+
+    const ignoreRules = resolveIgnoreRequestRules(session.options);
+    attachCollectors(session, page, ignoreRules);
 
     session.progress = "打开入口页…";
     touch(session);
@@ -311,6 +354,14 @@ async function runScan(session: ActiveScan): Promise<void> {
         return;
       }
       await runNavigationProbe(session, page);
+    }
+
+    if (session.options.enableClick && session.options.enableHoverProbe) {
+      if (!(await waitWhilePaused(session))) {
+        session.status = ScanStatus.Cancelled;
+        return;
+      }
+      await runHoverProbe(session, page);
     }
 
     if (session.options.enableClick) {

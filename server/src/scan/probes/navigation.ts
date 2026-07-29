@@ -1,5 +1,12 @@
 import type { Page } from "playwright";
-import { ClickOutcome, PhaseName, ScanStatus, SkipReason } from "../../types.js";
+import {
+  ClickOutcome,
+  PhaseName,
+  ScanStatus,
+  SkipReason,
+  getDefaultProbeSelectors,
+  resolveProbeSelectors,
+} from "../../types.js";
 import {
   addClickAction,
   markPhase,
@@ -24,16 +31,24 @@ async function waitWhilePaused(session: ActiveScan): Promise<boolean> {
   return !session.abort;
 }
 
+/** Navigation probe: click scored nav/menu targets (no top→side hardcode). */
 export async function runNavigationProbe(session: ActiveScan, page: Page): Promise<void> {
   if (!session.options.enableNavigationProbe || !session.options.enableClick) return;
 
-  session.progress = "导航探测（顶栏路由 → 侧栏菜单）…";
+  session.progress = "导航探测…";
   touch(session);
   markPhase(session, PhaseName.Navigation, false);
 
-  const navTargets = await collectNavTargets(page);
-  const navItems = navTargets.filter((t) => t.component === "thy-nav-item");
-  const scoredNav = sortClickTargets(navItems, session.options);
+  const probe = session.options.probeSelectors ?? getDefaultProbeSelectors();
+  const resolved = resolveProbeSelectors(probe);
+  if (!resolved.nav.length) {
+    markPhase(session, PhaseName.Navigation, true);
+    touch(session);
+    return;
+  }
+
+  const navTargets = await collectNavTargets(page, probe);
+  const scoredNav = sortClickTargets(navTargets, session.options);
 
   for (const scored of scoredNav) {
     if (session.clicksTried >= session.options.maxClicks) break;
@@ -52,7 +67,7 @@ export async function runNavigationProbe(session: ActiveScan, page: Page): Promi
       continue;
     }
 
-    session.progress = `路由 ${scored.target.label}`;
+    session.progress = `导航 ${scored.target.label}`;
     session.status = ScanStatus.Running;
     touch(session);
 
@@ -71,48 +86,6 @@ export async function runNavigationProbe(session: ActiveScan, page: Page): Promi
     if (!result.ok) recordClickFailure(session, page.url(), scored.target, result.error);
 
     await page.waitForTimeout(session.options.clickDelayMs + session.options.postClickSettleMs);
-
-    const menuTargets = (await collectNavTargets(page)).filter((t) => t.component === "thy-menu-item");
-    const scoredMenus = sortClickTargets(menuTargets, session.options);
-
-    for (const menuScored of scoredMenus) {
-      if (session.clicksTried >= session.options.maxClicks) break;
-      if (!(await waitWhilePaused(session))) return;
-
-      if (menuScored.skipReason === SkipReason.Blacklist) {
-        session.clicksSkipped += 1;
-        addClickAction(session, {
-          pageUrl: page.url(),
-          target: menuScored.target,
-          outcome: ClickOutcome.Skipped,
-          skipReason: SkipReason.Blacklist,
-          score: menuScored.score,
-          matchedRules: menuScored.matchedRules,
-        });
-        continue;
-      }
-
-      session.progress = `${scored.target.label} › ${menuScored.target.label}`;
-      touch(session);
-
-      const menuResult = await tryClickTarget(page, menuScored.target);
-      session.clicksTried += 1;
-
-      addClickAction(session, {
-        pageUrl: page.url(),
-        target: menuScored.target,
-        outcome: menuResult.ok ? ClickOutcome.Success : ClickOutcome.Failed,
-        score: menuScored.score,
-        matchedRules: menuScored.matchedRules,
-        error: menuResult.error,
-      });
-
-      if (!menuResult.ok) {
-        recordClickFailure(session, page.url(), menuScored.target, menuResult.error);
-      }
-
-      await page.waitForTimeout(session.options.clickDelayMs + session.options.postClickSettleMs);
-    }
   }
 
   markPhase(session, PhaseName.Navigation, true);

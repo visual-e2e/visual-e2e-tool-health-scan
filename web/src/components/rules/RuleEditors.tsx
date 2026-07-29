@@ -40,7 +40,7 @@ function WeightInput({
   );
 }
 
-function ValuesInput({
+export function ValuesInput({
   value,
   disabled,
   placeholder,

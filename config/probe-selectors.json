@@ -1,0 +1,120 @@
+{
+  "version": 2,
+  "type": "probe",
+  "rules": [
+    {
+      "id": 1,
+      "title": "通用可点击元素",
+      "category": "click",
+      "action": "click",
+      "type": "selector",
+      "op": "equals",
+      "values": [
+        "a[href]",
+        "button:not([disabled])",
+        "[role='button']",
+        "[role='tab']",
+        "[role='menuitem']",
+        "input[type='button']:not([disabled])",
+        "input[type='submit']:not([disabled])",
+        "input[type='reset']:not([disabled])",
+        "summary",
+        "label[for]",
+        "[tabindex]:not([tabindex='-1'])"
+      ],
+      "description": "网站通用点击候选"
+    },
+    {
+      "id": 2,
+      "title": "悬停展开入口",
+      "category": "hover",
+      "action": "hover",
+      "type": "selector",
+      "op": "equals",
+      "values": [
+        "[aria-haspopup='true']",
+        "[aria-haspopup='menu']",
+        "[aria-haspopup='listbox']",
+        "[aria-expanded='false']"
+      ],
+      "description": "悬停后出现菜单/气泡的触发器"
+    },
+    {
+      "id": 3,
+      "title": "导航与菜单",
+      "category": "nav",
+      "action": "click",
+      "type": "selector",
+      "op": "equals",
+      "values": [
+        "nav a[href]",
+        "[role='navigation'] a[href]",
+        "[role='menuitem']",
+        "[role='tab']",
+        "[aria-current='page']"
+      ],
+      "description": "路由/菜单探测候选"
+    },
+    {
+      "id": 4,
+      "title": "浮层与弹框",
+      "category": "layout",
+      "role": "overlay",
+      "type": "selector",
+      "op": "equals",
+      "values": [
+        "[role='dialog'][aria-modal='true']",
+        "[role='dialog']",
+        "[aria-modal='true']",
+        ".modal",
+        ".drawer",
+        ".overlay",
+        ".popup"
+      ],
+      "description": "弹框/抽屉/遮罩容器"
+    },
+    {
+      "id": 5,
+      "title": "浮层关闭控件",
+      "category": "layout",
+      "role": "close",
+      "type": "selector",
+      "op": "equals",
+      "values": [
+        "[aria-label='关闭']",
+        "[aria-label='Close']",
+        "[aria-label='close']",
+        "button[aria-label*='close']"
+      ]
+    },
+    {
+      "id": 6,
+      "title": "浮层标题",
+      "category": "layout",
+      "role": "title",
+      "type": "selector",
+      "op": "equals",
+      "values": [
+        "[class*='title']",
+        "h1",
+        "h2",
+        "h3"
+      ]
+    },
+    {
+      "id": 7,
+      "title": "布局抽样节点",
+      "category": "layout",
+      "role": "sample",
+      "type": "selector",
+      "op": "equals",
+      "values": [
+        "button",
+        "[role='button']",
+        "a",
+        "input",
+        "select"
+      ]
+    }
+  ]
+}

@@ -1,12 +1,22 @@
 {
   "version": 3,
+  "type": "blacklist",
   "rules": [
     {
       "id": 1,
       "title": "破坏性/交易操作",
       "type": "text",
       "op": "contains",
-      "values": ["删除", "注销", "退出", "登出", "支付", "付款", "提交订单", "清空"],
+      "values": [
+        "删除",
+        "注销",
+        "退出",
+        "登出",
+        "支付",
+        "付款",
+        "提交订单",
+        "清空"
+      ],
       "description": "破坏性/交易操作"
     },
     {
@@ -14,7 +24,10 @@
       "title": "系统管理入口",
       "type": "text",
       "op": "contains",
-      "values": ["系统管理", "权限配置"]
+      "values": [
+        "系统管理",
+        "权限配置"
+      ]
     },
     {
       "id": 3,
@@ -22,7 +35,9 @@
       "type": "attribute",
       "attr": "id",
       "op": "equals",
-      "values": ["navsettings"]
+      "values": [
+        "navsettings"
+      ]
     }
   ]
 }

@@ -3,6 +3,8 @@ import {
   IssueCategory,
   IssueSeverity,
   PhaseName,
+  isIgnoredRequest,
+  type IgnoreRequestRule,
   type ScanOptions,
 } from "../../types.js";
 import { addIssue, markPhase, touch, type ActiveScan } from "../session-context.js";
@@ -11,36 +13,18 @@ import { BROWSER_EVAL_SHIM } from "../utils/browser-shim.js";
 const STATIC_TYPES = new Set(["stylesheet", "image", "font", "media", "script"]);
 const API_TYPES = new Set(["xhr", "fetch"]);
 
-function compileExcludes(patterns: string[]): RegExp[] {
-  const out: RegExp[] = [];
-  for (const raw of patterns) {
-    const p = raw.trim();
-    if (!p) continue;
-    try {
-      out.push(new RegExp(p, "i"));
-    } catch {
-      // ignore invalid
-    }
-  }
-  return out;
-}
-
-function isExcluded(url: string, excludes: RegExp[]): boolean {
-  return excludes.some((re) => re.test(url));
-}
-
 export function attachCollectors(
   session: ActiveScan,
   page: Page,
-  excludes: RegExp[],
+  ignoreRules: IgnoreRequestRule[] = session.options.ignoreRequestRules ?? [],
 ): void {
   const onResponse = (res: Response) => {
     if (!session.collecting || !session.options.enableNetwork) return;
     const req = res.request();
     const url = res.url();
-    if (isExcluded(url, excludes)) return;
-    const status = res.status();
     const resourceType = req.resourceType();
+    if (isIgnoredRequest(url, resourceType, ignoreRules)) return;
+    const status = res.status();
     const pageUrl = page.url();
     const minApi = session.options.apiErrorMinStatus;
 
@@ -77,8 +61,8 @@ export function attachCollectors(
   const onFailed = (req: Request) => {
     if (!session.collecting || !session.options.enableNetwork) return;
     const url = req.url();
-    if (isExcluded(url, excludes)) return;
     const resourceType = req.resourceType();
+    if (isIgnoredRequest(url, resourceType, ignoreRules)) return;
     if (!STATIC_TYPES.has(resourceType) && !API_TYPES.has(resourceType)) return;
     const failure = req.failure()?.errorText ?? "request failed";
     addIssue(session, {
@@ -133,8 +117,8 @@ export function attachCollectors(
   });
 }
 
-export function compileUrlExcludes(options: ScanOptions): RegExp[] {
-  return compileExcludes(options.urlExclude);
+export function resolveIgnoreRequestRules(options: ScanOptions): IgnoreRequestRule[] {
+  return options.ignoreRequestRules ?? [];
 }
 
 export async function runNetworkSnapshot(session: ActiveScan, page: Page): Promise<void> {
@@ -189,7 +173,9 @@ export async function runNetworkSnapshot(session: ActiveScan, page: Page): Promi
     return out;
   }, BROWSER_EVAL_SHIM);
 
+  const ignoreRules = session.options.ignoreRequestRules ?? [];
   for (const f of findings) {
+    if (f.url && isIgnoredRequest(f.url, f.resourceType ?? "other", ignoreRules)) continue;
     addIssue(session, {
       category: IssueCategory.Network,
       severity: f.severity,

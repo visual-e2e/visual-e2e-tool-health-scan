@@ -13,6 +13,17 @@ import {
   saveRulesConfig,
 } from "./rules-config.js";
 import {
+  getProbeSelectors,
+  resetProbeSelectorsToDefault,
+  resetProbeSelectorsToGeneric,
+  saveProbeSelectors,
+} from "./probe-selectors-store.js";
+import {
+  getUrlExclude,
+  resetUrlExcludeToDefault,
+  saveUrlExclude,
+} from "./url-exclude-store.js";
+import {
   createProfile,
   deleteProfile,
   getProfile,
@@ -31,7 +42,14 @@ import {
   updateReport,
 } from "./report/report-store.js";
 import { migrateLegacyConfigIfNeeded, resolveSessionArtifactsDir } from "./storage/paths.js";
-import type { CreateProfilePayload, PersistedScanConfig, ScanOptions, UpdateProfilePayload, UpdateReportPayload } from "./types.js";
+import type {
+  CreateProfilePayload,
+  PersistedScanConfig,
+  ProbeSelectorsConfig,
+  ScanOptions,
+  UpdateProfilePayload,
+  UpdateReportPayload,
+} from "./types.js";
 import { RuleListType, type ClickRuleConfig } from "./types.js";
 
 const port = Number(process.env.TOOL_PORT ?? "3203");
@@ -166,6 +184,81 @@ app.post<{ Params: { profileId: string }; Body: { list: RuleListType } }>(
       return await openRulesConfigFile(req.params.profileId, list);
     } catch (err) {
       const message = err instanceof Error ? err.message : "打开规则文件失败";
+      return reply.status(400).send({ error: message });
+    }
+  },
+);
+
+app.get<{ Params: { profileId: string } }>(
+  "/api/profiles/:profileId/probe-selectors",
+  async (req, reply) => {
+    try {
+      return await getProbeSelectors(req.params.profileId);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "读取探测选择器失败";
+      return reply.status(400).send({ error: message });
+    }
+  },
+);
+
+app.put<{ Params: { profileId: string }; Body: ProbeSelectorsConfig }>(
+  "/api/profiles/:profileId/probe-selectors",
+  async (req, reply) => {
+    try {
+      return await saveProbeSelectors(req.params.profileId, req.body);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "保存探测选择器失败";
+      return reply.status(400).send({ error: message });
+    }
+  },
+);
+
+app.post<{ Params: { profileId: string }; Body: { mode?: "default" | "generic" } }>(
+  "/api/profiles/:profileId/probe-selectors/reset",
+  async (req, reply) => {
+    try {
+      if (req.body?.mode === "generic") {
+        return await resetProbeSelectorsToGeneric(req.params.profileId);
+      }
+      return await resetProbeSelectorsToDefault(req.params.profileId);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "恢复探测选择器失败";
+      return reply.status(400).send({ error: message });
+    }
+  },
+);
+
+app.get<{ Params: { profileId: string } }>(
+  "/api/profiles/:profileId/url-exclude",
+  async (req, reply) => {
+    try {
+      return await getUrlExclude(req.params.profileId);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "读取忽略请求失败";
+      return reply.status(400).send({ error: message });
+    }
+  },
+);
+
+app.put<{ Params: { profileId: string }; Body: { rules: import("./types.js").IgnoreRequestRule[] } }>(
+  "/api/profiles/:profileId/url-exclude",
+  async (req, reply) => {
+    try {
+      return await saveUrlExclude(req.params.profileId, req.body?.rules ?? []);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "保存忽略请求失败";
+      return reply.status(400).send({ error: message });
+    }
+  },
+);
+
+app.post<{ Params: { profileId: string } }>(
+  "/api/profiles/:profileId/url-exclude/reset",
+  async (req, reply) => {
+    try {
+      return await resetUrlExcludeToDefault(req.params.profileId);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "恢复忽略请求失败";
       return reply.status(400).send({ error: message });
     }
   },

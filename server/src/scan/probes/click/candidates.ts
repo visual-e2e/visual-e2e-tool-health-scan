@@ -1,34 +1,32 @@
 import type { Page } from "playwright";
-import { ScopeType, type ClickTargetIdentity } from "../../../types.js";
+import {
+  ScopeType,
+  getDefaultProbeSelectors,
+  resolveProbeSelectors,
+  type ClickTargetIdentity,
+  type ProbeSelectorsConfig,
+} from "../../../types.js";
 import { buildTargetId } from "../../utils/target-id.js";
 import type { OverlayInfo } from "./overlay.js";
-import { OVERLAY_CANDIDATE_SELECTORS, CLOSE_HINT_SELECTORS } from "./overlay.js";
 import { BROWSER_EVAL_SHIM } from "../../utils/browser-shim.js";
+
+/** Unified nav/menu component tag (replaces nav-top / nav-side). */
+export const NAV_COMPONENT = "nav";
+/** @deprecated use NAV_COMPONENT */
+export const NAV_TOP_COMPONENT = NAV_COMPONENT;
+/** @deprecated use NAV_COMPONENT */
+export const NAV_SIDE_COMPONENT = NAV_COMPONENT;
 
 export interface CollectScope {
   type: ScopeType;
   overlay?: OverlayInfo;
 }
 
-const CLICKABLE_SELECTORS = [
-  "a[href]",
-  "a.thy-nav-item",
-  "thy-menu-item",
-  "button:not([disabled])",
-  "[role='button']",
-  "[role='tab']",
-  "[role='menuitem']",
-  "input[type='button']:not([disabled])",
-  "input[type='submit']:not([disabled])",
-  ".ant-btn:not([disabled])",
-  "a.thy-action",
-  "[tabindex]:not([tabindex='-1'])",
-];
-
 /** Browser-side collector — no nested named fns (esbuild/tsx injects __name). */
 export async function collectClickTargets(
   page: Page,
   scope: CollectScope,
+  probe: ProbeSelectorsConfig = getDefaultProbeSelectors(),
 ): Promise<ClickTargetIdentity[]> {
   const raw = await page.evaluate(
     (payload: {
@@ -37,6 +35,9 @@ export async function collectClickTargets(
         clickableSels: string[];
         overlaySels: string[];
         closeSels: string[];
+        navSels: string[];
+        hoverSels: string[];
+        overlayTitleSels: string[];
         scopeType: ScopeType;
         overlaySelector?: string;
         scopeLabel?: string;
@@ -46,13 +47,50 @@ export async function collectClickTargets(
       eval(payload.shim);
       const {
         clickableSels,
-        overlaySels,
         closeSels,
+        navSels,
+        hoverSels,
+        overlayTitleSels,
         scopeType,
         overlaySelector,
         scopeLabel,
         layer,
       } = payload.args;
+
+      const safeQueryAll = (root: ParentNode, sels: string[]): Element[] => {
+        const out: Element[] = [];
+        for (const sel of sels) {
+          try {
+            out.push(...Array.from(root.querySelectorAll(sel)));
+          } catch {
+            // skip invalid
+          }
+        }
+        return out;
+      };
+
+      const matchesAny = (el: Element, sels: string[]): boolean => {
+        for (const sel of sels) {
+          try {
+            if (el.matches(sel)) return true;
+          } catch {
+            // skip
+          }
+        }
+        return false;
+      };
+
+      const closestAny = (el: Element, sels: string[]): Element | null => {
+        for (const sel of sels) {
+          try {
+            const hit = el.closest(sel);
+            if (hit) return hit;
+          } catch {
+            // skip
+          }
+        }
+        return null;
+      };
 
       let root: ParentNode = document;
       if (scopeType === "overlay" && overlaySelector) {
@@ -83,7 +121,7 @@ export async function collectClickTargets(
         root = found;
       }
 
-      const nodes = Array.from(root.querySelectorAll(clickableSels.join(",")));
+      const nodes = safeQueryAll(root, clickableSels);
       const out: Array<{
         label: string;
         labelSource: string;
@@ -118,9 +156,7 @@ export async function collectClickTargets(
         const tag = (node.localName || node.nodeName).toLowerCase();
         const className = (node as HTMLElement).className;
         const classes =
-          typeof className === "string"
-            ? className.split(/\s+/).filter(Boolean).join(" ")
-            : "";
+          typeof className === "string" ? className.split(/\s+/).filter(Boolean).join(" ") : "";
         return [tag, classes].filter(Boolean).join(" ");
       };
       const collectParentChain = (start: Element): string[] => {
@@ -138,64 +174,36 @@ export async function collectClickTargets(
         return className
           .split(/\s+/)
           .filter(Boolean)
-          .filter(
-            (c) =>
-              !/^ng-/.test(c) &&
-              !/^cdk-/.test(c) &&
-              !/^(active|focus|hover|selected|disabled|open)$/i.test(c),
-          )
+          .filter((c) => !/^(ng-|cdk-|ant-btn-loading|active|selected|hover|focus)/.test(c))
           .slice(0, 4);
       };
-      const nthOfType = (el: Element): number | undefined => {
-        const parent = el.parentElement;
-        if (!parent) return undefined;
-        const tag = el.tagName.toLowerCase();
-        const siblings = Array.from(parent.children).filter((c) => c.tagName.toLowerCase() === tag);
-        if (siblings.length <= 1) return undefined;
-        const idx = siblings.indexOf(el);
-        return idx >= 0 ? idx + 1 : undefined;
+      const nthOfType = (el: Element): number => {
+        const tag = el.tagName;
+        let n = 1;
+        let sib = el.previousElementSibling;
+        while (sib) {
+          if (sib.tagName === tag) n += 1;
+          sib = sib.previousElementSibling;
+        }
+        return n;
       };
 
       for (const el of nodes) {
-        if (scopeType === "page") {
-          let insideOverlay = false;
-          for (let si = 0; si < overlaySels.length; si++) {
-            if (el.closest(overlaySels[si]!)) {
-              insideOverlay = true;
-              break;
-            }
-          }
-          if (insideOverlay) continue;
-        }
-
-        let isClose = false;
-        for (let ci = 0; ci < closeSels.length; ci++) {
-          const sel = closeSels[ci]!;
-          if (el.matches(sel) || el.closest(sel)) {
-            isClose = true;
-            break;
-          }
-        }
-        if (!isClose) {
-          const textProbe = (
-            (el as HTMLElement).innerText ||
-            el.getAttribute("aria-label") ||
-            el.getAttribute("title") ||
-            el.getAttribute("thyicon") ||
-            ""
-          )
-            .replace(/\s+/g, " ")
-            .trim();
-          if (/^(关闭|close|×|✕)$/i.test(textProbe)) isClose = true;
-          if (/关闭|close/i.test(el.getAttribute("thyicon") || "")) isClose = true;
-        }
-        if (isClose) continue;
-
         const html = el as HTMLElement;
-        const style = window.getComputedStyle(html);
-        if (style.display === "none" || style.visibility === "hidden" || style.opacity === "0") {
+        if (
+          closeSels.some((s) => {
+            try {
+              return html.matches(s);
+            } catch {
+              return false;
+            }
+          })
+        ) {
           continue;
         }
+
+        const style = window.getComputedStyle(html);
+        if (style.display === "none" || style.visibility === "hidden") continue;
         const rect = html.getBoundingClientRect();
         if (rect.width < 4 || rect.height < 4) continue;
         if (rect.bottom < 0 || rect.top > window.innerHeight) continue;
@@ -231,19 +239,21 @@ export async function collectClickTargets(
 
         let clickEl = el;
         let component: string | undefined;
-        if (el.matches("a.thy-nav-item")) component = "thy-nav-item";
-        else if (el.matches("thy-menu-item")) component = "thy-menu-item";
-        else if (el.matches("a.thy-action")) component = "thy-action";
-        else if (el.closest("thy-menu-item") && !el.matches("thy-menu-item")) {
-          const parent = el.closest("thy-menu-item")!;
-          clickEl = parent;
-          component = "thy-menu-item";
+        if (matchesAny(el, navSels)) component = "nav";
+        else {
+          const navParent = closestAny(el, navSels);
+          if (navParent && navParent !== el) {
+            clickEl = navParent;
+            component = "nav";
+          }
         }
+        if (!component && matchesAny(el, hoverSels)) component = "hover";
 
         const roleAttr = clickEl.getAttribute("role");
         let role = roleAttr || (clickEl.tagName.toLowerCase() === "a" ? "link" : "button");
-        if (clickEl.matches("thy-menu-item")) role = "menuitem";
-        if (clickEl.matches("a.thy-nav-item")) role = "tab";
+        if (component === "nav") {
+          role = roleAttr === "tab" ? "tab" : "menuitem";
+        }
 
         const clickRect = (clickEl as HTMLElement).getBoundingClientRect();
         const elementId = clickEl.id || undefined;
@@ -254,10 +264,18 @@ export async function collectClickTargets(
 
         let dialogTitle: string | undefined;
         if (scopeType === "overlay") {
-          const titleEl = (root as Element).querySelector(
-            ".ant-modal-title, .thy-dialog-header, [class*='title']",
-          );
-          dialogTitle = titleEl?.textContent?.trim().slice(0, 60);
+          for (const ts of overlayTitleSels) {
+            try {
+              const titleEl = (root as Element).querySelector(ts);
+              const t = titleEl?.textContent?.trim();
+              if (t) {
+                dialogTitle = t.slice(0, 60);
+                break;
+              }
+            } catch {
+              // skip
+            }
+          }
         }
 
         let sectionHeading: string | undefined;
@@ -271,10 +289,14 @@ export async function collectClickTargets(
           walk = walk.parentElement;
         }
 
-        const activeNav = document.querySelector(
-          "a.thy-nav-item.active, a.thy-nav-item[class*='active']",
-        );
-        const activeNavRoute = activeNav?.textContent?.trim().slice(0, 60) || undefined;
+        let activeNavRoute: string | undefined;
+        try {
+          const activeNav = document.querySelector("[aria-current='page'], [aria-selected='true']");
+          const t = activeNav?.textContent?.trim();
+          if (t) activeNavRoute = t.slice(0, 60);
+        } catch {
+          // skip
+        }
 
         const selectorSelf = elementTokens(clickEl);
 
@@ -345,18 +367,24 @@ export async function collectClickTargets(
 
       return out;
     },
-    {
-      shim: BROWSER_EVAL_SHIM,
-      args: {
-        clickableSels: CLICKABLE_SELECTORS,
-        overlaySels: OVERLAY_CANDIDATE_SELECTORS,
-        closeSels: CLOSE_HINT_SELECTORS,
-        scopeType: scope.type,
-        overlaySelector: scope.overlay?.selector,
-        scopeLabel: scope.overlay?.scopeLabel,
-        layer: scope.overlay?.layer ?? 0,
-      },
-    },
+    (() => {
+      const resolved = resolveProbeSelectors(probe);
+      return {
+        shim: BROWSER_EVAL_SHIM,
+        args: {
+          clickableSels: resolved.clickable,
+          overlaySels: resolved.overlay,
+          closeSels: resolved.overlayClose,
+          navSels: resolved.nav,
+          hoverSels: resolved.hoverable,
+          overlayTitleSels: resolved.overlayTitle,
+          scopeType: scope.type,
+          overlaySelector: scope.overlay?.selector,
+          scopeLabel: scope.overlay?.scopeLabel,
+          layer: scope.overlay?.layer ?? 0,
+        },
+      };
+    })(),
   );
 
   return raw.map((partial) => ({
@@ -371,129 +399,117 @@ export async function collectClickTargets(
 }
 
 /** Collect nav and menu items specifically for navigation probe. */
-export async function collectNavTargets(page: Page): Promise<ClickTargetIdentity[]> {
-  const raw = await page.evaluate((shim: string) => {
-    eval(shim);
-    const out: Array<{
-      label: string;
-      labelSource: string;
-      role: string;
-      tag: string;
-      component?: string;
-      elementId?: string;
-      scope: { type: string; scopeLabel?: string; layer: number };
-      anchors?: { activeNavRoute?: string };
-      navigationPath?: Array<{
-        kind: string;
+export async function collectNavTargets(
+  page: Page,
+  probe: ProbeSelectorsConfig = getDefaultProbeSelectors(),
+): Promise<ClickTargetIdentity[]> {
+  const resolved = resolveProbeSelectors(probe);
+  const raw = await page.evaluate(
+    (payload: { shim: string; navSels: string[] }) => {
+      eval(payload.shim);
+      const { navSels } = payload;
+
+      const safeQueryAll = (sels: string[]): Element[] => {
+        const out: Element[] = [];
+        const seen = new Set<Element>();
+        for (const sel of sels) {
+          try {
+            for (const el of document.querySelectorAll(sel)) {
+              if (seen.has(el)) continue;
+              seen.add(el);
+              out.push(el);
+            }
+          } catch {
+            // skip
+          }
+        }
+        return out;
+      };
+
+      const out: Array<{
         label: string;
+        labelSource: string;
+        role: string;
+        tag: string;
         component?: string;
         elementId?: string;
-      }>;
-      position: { top: number; left: number; width: number; height: number };
-      matchContext: {
-        searchText: string;
-        attributes: Record<string, string>;
-        selectorSelf: string;
-        parentChain: string[];
+        scope: { type: string; scopeLabel?: string; layer: number };
+        navigationPath?: Array<{
+          kind: string;
+          label: string;
+          component?: string;
+          elementId?: string;
+        }>;
+        position: { top: number; left: number; width: number; height: number };
+        matchContext: {
+          searchText: string;
+          attributes: Record<string, string>;
+          selectorSelf: string;
+          parentChain: string[];
+        };
+      }> = [];
+      const elementTokens = (node: Element): string => {
+        const tag = (node.localName || node.nodeName).toLowerCase();
+        const className = (node as HTMLElement).className;
+        const classes =
+          typeof className === "string" ? className.split(/\s+/).filter(Boolean).join(" ") : "";
+        return [tag, classes].filter(Boolean).join(" ");
       };
-    }> = [];
-    const elementTokens = (node: Element): string => {
-      const tag = (node.localName || node.nodeName).toLowerCase();
-      const className = (node as HTMLElement).className;
-      const classes =
-        typeof className === "string" ? className.split(/\s+/).filter(Boolean).join(" ") : "";
-      return [tag, classes].filter(Boolean).join(" ");
-    };
-    const collectParentChain = (start: Element): string[] => {
-      const chain: string[] = [];
-      let cursor: Element | null = start;
-      while (cursor) {
-        chain.push(elementTokens(cursor));
-        cursor = cursor.parentElement;
+      const collectParentChain = (start: Element): string[] => {
+        const chain: string[] = [];
+        let cursor: Element | null = start;
+        while (cursor) {
+          chain.push(elementTokens(cursor));
+          cursor = cursor.parentElement;
+        }
+        return chain;
+      };
+
+      for (const el of safeQueryAll(navSels)) {
+        const html = el as HTMLElement;
+        const style = window.getComputedStyle(html);
+        if (style.display === "none" || style.visibility === "hidden") continue;
+        const rect = html.getBoundingClientRect();
+        if (rect.width < 4 || rect.height < 4) continue;
+        const label =
+          html.innerText?.replace(/\s+/g, " ").trim().slice(0, 80) ||
+          html.getAttribute("aria-label")?.slice(0, 80) ||
+          html.getAttribute("title")?.slice(0, 80) ||
+          el.id ||
+          "[无文本]";
+        const roleAttr = el.getAttribute("role");
+        const role = roleAttr === "tab" ? "tab" : roleAttr || "menuitem";
+        const attrs: Record<string, string> = {};
+        if (el.id) attrs.id = el.id;
+        const ar = el.getAttribute("aria-label");
+        if (ar) attrs["aria-label"] = ar;
+        attrs.role = role;
+        out.push({
+          label,
+          labelSource: "text",
+          role,
+          tag: el.tagName.toLowerCase(),
+          component: "nav",
+          elementId: el.id || undefined,
+          scope: { type: "page", scopeLabel: "导航/菜单", layer: 0 },
+          navigationPath: [{ kind: "menu-item", label, component: "nav", elementId: el.id || undefined }],
+          position: { top: rect.top, left: rect.left, width: rect.width, height: rect.height },
+          matchContext: {
+            searchText: [label, "导航", el.id].filter(Boolean).join(" "),
+            attributes: attrs,
+            selectorSelf: elementTokens(el),
+            parentChain: collectParentChain(el),
+          },
+        });
       }
-      return chain;
-    };
 
-    const navItems = Array.from(document.querySelectorAll("a.thy-nav-item"));
-    for (const el of navItems) {
-      const html = el as HTMLElement;
-      const style = window.getComputedStyle(html);
-      if (style.display === "none" || style.visibility === "hidden") continue;
-      const rect = html.getBoundingClientRect();
-      if (rect.width < 4 || rect.height < 4) continue;
-      const label = html.innerText?.replace(/\s+/g, " ").trim().slice(0, 80) || "[无文本]";
-      const attrs: Record<string, string> = {};
-      if (el.id) attrs.id = el.id;
-      const ar = el.getAttribute("aria-label");
-      if (ar) attrs["aria-label"] = ar;
-      attrs.role = "tab";
-      out.push({
-        label,
-        labelSource: "text",
-        role: "tab",
-        tag: "a",
-        component: "thy-nav-item",
-        elementId: el.id || undefined,
-        scope: { type: "page", scopeLabel: "顶栏导航", layer: 0 },
-        position: { top: rect.top, left: rect.left, width: rect.width, height: rect.height },
-        matchContext: {
-          searchText: [label, "顶栏导航", el.id].filter(Boolean).join(" "),
-          attributes: attrs,
-          selectorSelf: elementTokens(el),
-          parentChain: collectParentChain(el),
-        },
-      });
-    }
-
-    const menuItems = Array.from(document.querySelectorAll("thy-menu-item"));
-    const activeNav = document.querySelector(
-      "a.thy-nav-item.active, a.thy-nav-item[class*='active']",
-    );
-    const activeNavRoute = activeNav?.textContent?.trim().slice(0, 60) || undefined;
-
-    for (const el of menuItems) {
-      const html = el as HTMLElement;
-      const style = window.getComputedStyle(html);
-      if (style.display === "none" || style.visibility === "hidden") continue;
-      const rect = html.getBoundingClientRect();
-      if (rect.width < 4 || rect.height < 4) continue;
-      const content = html.querySelector(".thy-menu-item-content");
-      const label =
-        (content?.textContent || html.innerText || html.getAttribute("title") || "")
-          .replace(/\s+/g, " ")
-          .trim()
-          .slice(0, 80) || el.id || "[无文本]";
-      const menuAttrs: Record<string, string> = {};
-      if (el.id) menuAttrs.id = el.id;
-      menuAttrs.role = "menuitem";
-      const navPath = activeNavRoute
-        ? [
-            { kind: "nav-route", label: activeNavRoute, component: "thy-nav-item" },
-            { kind: "menu-item", label, component: "thy-menu-item", elementId: el.id || undefined },
-          ]
-        : [{ kind: "menu-item", label, component: "thy-menu-item", elementId: el.id || undefined }];
-      out.push({
-        label,
-        labelSource: "text",
-        role: "menuitem",
-        tag: "thy-menu-item",
-        component: "thy-menu-item",
-        elementId: el.id || undefined,
-        scope: { type: "page", scopeLabel: "侧栏菜单", layer: 0 },
-        anchors: { activeNavRoute },
-        navigationPath: navPath,
-        position: { top: rect.top, left: rect.left, width: rect.width, height: rect.height },
-        matchContext: {
-          searchText: [label, "侧栏菜单", activeNavRoute, el.id].filter(Boolean).join(" "),
-          attributes: menuAttrs,
-          selectorSelf: elementTokens(el),
-          parentChain: collectParentChain(el),
-        },
-      });
-    }
-
-    return out;
-  }, BROWSER_EVAL_SHIM);
+      return out;
+    },
+    {
+      shim: BROWSER_EVAL_SHIM,
+      navSels: resolved.nav,
+    },
+  );
 
   return raw.map((partial) => ({
     ...partial,
@@ -503,6 +519,109 @@ export async function collectNavTargets(page: Page): Promise<ClickTargetIdentity
       type: partial.scope.type as ClickTargetIdentity["scope"]["type"],
     },
     navigationPath: partial.navigationPath as ClickTargetIdentity["navigationPath"],
+    targetId: buildTargetId(partial as Omit<ClickTargetIdentity, "targetId">),
+  }));
+}
+
+export async function collectHoverTargets(
+  page: Page,
+  probe: ProbeSelectorsConfig = getDefaultProbeSelectors(),
+): Promise<ClickTargetIdentity[]> {
+  const resolved = resolveProbeSelectors(probe);
+  if (!resolved.hoverable.length) return [];
+  const raw = await page.evaluate(
+    (payload: { shim: string; hoverSels: string[] }) => {
+      eval(payload.shim);
+      const { hoverSels } = payload;
+      const out: Array<{
+        label: string;
+        labelSource: string;
+        role: string;
+        tag: string;
+        component?: string;
+        elementId?: string;
+        scope: { type: string; scopeLabel?: string; layer: number };
+        position: { top: number; left: number; width: number; height: number };
+        matchContext: {
+          searchText: string;
+          attributes: Record<string, string>;
+          selectorSelf: string;
+          parentChain: string[];
+        };
+      }> = [];
+      const seen = new Set<Element>();
+      const elementTokens = (node: Element): string => {
+        const tag = (node.localName || node.nodeName).toLowerCase();
+        const className = (node as HTMLElement).className;
+        const classes =
+          typeof className === "string" ? className.split(/\s+/).filter(Boolean).join(" ") : "";
+        return [tag, classes].filter(Boolean).join(" ");
+      };
+      const collectParentChain = (start: Element): string[] => {
+        const chain: string[] = [];
+        let cursor: Element | null = start;
+        while (cursor) {
+          chain.push(elementTokens(cursor));
+          cursor = cursor.parentElement;
+        }
+        return chain;
+      };
+
+      for (const sel of hoverSels) {
+        try {
+          for (const el of document.querySelectorAll(sel)) {
+            if (seen.has(el)) continue;
+            seen.add(el);
+            const html = el as HTMLElement;
+            const style = window.getComputedStyle(html);
+            if (style.display === "none" || style.visibility === "hidden") continue;
+            if (style.pointerEvents === "none") continue;
+            const rect = html.getBoundingClientRect();
+            if (rect.width < 4 || rect.height < 4) continue;
+            const label =
+              html.innerText?.replace(/\s+/g, " ").trim().slice(0, 80) ||
+              html.getAttribute("aria-label")?.slice(0, 80) ||
+              "[无文本]";
+            const attrs: Record<string, string> = {};
+            if (el.id) attrs.id = el.id;
+            const hasPopup = el.getAttribute("aria-haspopup");
+            if (hasPopup) attrs["aria-haspopup"] = hasPopup;
+            const expanded = el.getAttribute("aria-expanded");
+            if (expanded) attrs["aria-expanded"] = expanded;
+            out.push({
+              label,
+              labelSource: "text",
+              role: el.getAttribute("role") || "button",
+              tag: el.tagName.toLowerCase(),
+              component: "hover",
+              elementId: el.id || undefined,
+              scope: { type: "page", scopeLabel: "悬停", layer: 0 },
+              position: { top: rect.top, left: rect.left, width: rect.width, height: rect.height },
+              matchContext: {
+                searchText: [label, "悬停", el.id].filter(Boolean).join(" "),
+                attributes: attrs,
+                selectorSelf: elementTokens(el),
+                parentChain: collectParentChain(el),
+              },
+            });
+            if (out.length >= 80) return out;
+          }
+        } catch {
+          // skip invalid
+        }
+      }
+      return out;
+    },
+    { shim: BROWSER_EVAL_SHIM, hoverSels: resolved.hoverable },
+  );
+
+  return raw.map((partial) => ({
+    ...partial,
+    labelSource: partial.labelSource as ClickTargetIdentity["labelSource"],
+    scope: {
+      ...partial.scope,
+      type: partial.scope.type as ClickTargetIdentity["scope"]["type"],
+    },
     targetId: buildTargetId(partial as Omit<ClickTargetIdentity, "targetId">),
   }));
 }

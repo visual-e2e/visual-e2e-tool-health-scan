@@ -19,6 +19,8 @@ import {
   resolveToolConfigDir,
 } from "../storage/paths.js";
 import { getRulesConfigBundle, initProfileRulesFromDefaults } from "../rules-config.js";
+import { getProbeSelectors, initProfileProbeSelectorsFromDefaults } from "../probe-selectors-store.js";
+import { getUrlExclude, initProfileUrlExcludeFromDefaults } from "../url-exclude-store.js";
 
 interface ProfileIndex {
   profiles: ScanProfileMeta[];
@@ -47,6 +49,7 @@ function defaultScanConfig(partial?: Partial<PersistedScanConfig>): PersistedSca
     enableClick: partial?.enableClick ?? DEFAULT_SCAN_OPTIONS.enableClick,
     enableNavigationProbe:
       partial?.enableNavigationProbe ?? DEFAULT_SCAN_OPTIONS.enableNavigationProbe,
+    enableHoverProbe: partial?.enableHoverProbe ?? DEFAULT_SCAN_OPTIONS.enableHoverProbe,
     maxClicks: partial?.maxClicks ?? DEFAULT_SCAN_OPTIONS.maxClicks,
     maxOverlayDepth: partial?.maxOverlayDepth ?? DEFAULT_SCAN_OPTIONS.maxOverlayDepth,
     clickDelayMs: partial?.clickDelayMs ?? DEFAULT_SCAN_OPTIONS.clickDelayMs,
@@ -62,7 +65,6 @@ function defaultScanConfig(partial?: Partial<PersistedScanConfig>): PersistedSca
     clickSortTolerancePx:
       partial?.clickSortTolerancePx ?? DEFAULT_SCAN_OPTIONS.clickSortTolerancePx,
     apiErrorMinStatus: partial?.apiErrorMinStatus ?? DEFAULT_SCAN_OPTIONS.apiErrorMinStatus,
-    urlExclude: partial?.urlExclude ?? [...DEFAULT_SCAN_OPTIONS.urlExclude],
     autoLoginEnabled: partial?.autoLoginEnabled ?? DEFAULT_SCAN_OPTIONS.autoLoginEnabled,
     loginProfile: partial?.loginProfile,
     loginSelectors: {
@@ -72,6 +74,9 @@ function defaultScanConfig(partial?: Partial<PersistedScanConfig>): PersistedSca
     enableRecording: partial?.enableRecording ?? DEFAULT_SCAN_OPTIONS.enableRecording,
     enableFailureScreenshot:
       partial?.enableFailureScreenshot ?? DEFAULT_SCAN_OPTIONS.enableFailureScreenshot,
+    enableRouteScreenshot:
+      partial?.enableRouteScreenshot ?? DEFAULT_SCAN_OPTIONS.enableRouteScreenshot,
+    clickSuccessMode: partial?.clickSuccessMode ?? DEFAULT_SCAN_OPTIONS.clickSuccessMode,
   };
 }
 
@@ -138,6 +143,8 @@ export async function createProfile(payload: CreateProfilePayload): Promise<Scan
   await mkdir(resolveProfileDir(id), { recursive: true });
   await saveScanConfig(id, defaultScanConfig({ startUrl: meta.startUrl, projectId: meta.projectId }));
   await initProfileRulesFromDefaults(id);
+  await initProfileProbeSelectorsFromDefaults(id);
+  await initProfileUrlExcludeFromDefaults(id);
 
   const index = await readIndex();
   index.profiles.unshift(meta);
@@ -209,7 +216,7 @@ export async function migrateLegacyProfilesIfNeeded(): Promise<void> {
   if (hasLegacy) {
     const targetConfigDir = resolveProfileConfigDir(profile.id);
     await mkdir(targetConfigDir, { recursive: true });
-    for (const file of ["blacklist.json", "whitelist.json"]) {
+    for (const file of ["blacklist.json", "whitelist.json", "probe-selectors.json", "url-exclude.json"]) {
       const src = join(legacyDir, file);
       if (existsSync(src)) {
         await cp(src, join(targetConfigDir, file));
@@ -223,10 +230,14 @@ export async function migrateLegacyProfilesIfNeeded(): Promise<void> {
 export async function resolveProfileScanOptions(profileId: string) {
   const config = await getScanConfig(profileId);
   const rules = await getRulesConfigBundle(profileId);
+  const probe = await getProbeSelectors(profileId);
+  const urlExclude = await getUrlExclude(profileId);
   return {
     ...config,
     blacklistRules: rules.blacklist.rules,
     whitelistRules: rules.whitelist.rules,
     whitelistDefaultWeight: rules.whitelist.defaultWeight ?? 0,
+    probeSelectors: probe.config,
+    ignoreRequestRules: urlExclude.rules,
   };
 }

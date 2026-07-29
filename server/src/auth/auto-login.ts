@@ -9,7 +9,7 @@ export interface AutoLoginResult {
 const DEFAULT_SELECTORS: Required<LoginSelectors> = {
   username: "input[type='text'], input[name='username'], input[name='email'], input#username",
   password: "input[type='password']",
-  submit: "button[type='submit'], button:has-text('登录'), button:has-text('Sign in')",
+  submit: "button[type='submit']",
   successUrlPattern: "",
 };
 

@@ -1,5 +1,6 @@
 import { compileRules, assertClickRuleConfig } from "./compile-rules.js";
 import { RuleOp, RuleType } from "./enums/rule.js";
+import { RuleModuleType } from "./enums/rule-module.js";
 import type {
   BlacklistRuleFile,
   ClickRuleConfig,
@@ -10,7 +11,6 @@ import type { ClickTargetIdentity } from "./types/identity.js";
 import type { RuleMatchContext } from "./types/click-rule-config.js";
 import blacklistJson from "../config/blacklist.json" with { type: "json" };
 import whitelistJson from "../config/whitelist.json" with { type: "json" };
-import urlExcludeJson from "../config/url-exclude.json" with { type: "json" };
 
 function parseBlacklistFile(raw: unknown): BlacklistRuleFile {
   if (Array.isArray(raw)) {
@@ -21,7 +21,8 @@ function parseBlacklistFile(raw: unknown): BlacklistRuleFile {
     throw new Error("blacklist.json 格式无效");
   }
   const normalized = {
-    ...file,
+    version: 3 as const,
+    type: RuleModuleType.Blacklist,
     rules: file.rules.map(normalizeRule),
   } satisfies BlacklistRuleFile;
   for (let i = 0; i < normalized.rules.length; i++) assertClickRuleConfig(normalized.rules[i]!, i);
@@ -37,7 +38,9 @@ function parseWhitelistFile(raw: unknown): WhitelistRuleFile {
     throw new Error("whitelist.json 格式无效");
   }
   const normalized = {
-    ...file,
+    version: 3 as const,
+    type: RuleModuleType.Whitelist,
+    defaultWeight: file.defaultWeight,
     rules: file.rules.map(normalizeRule),
   } satisfies WhitelistRuleFile;
   for (let i = 0; i < normalized.rules.length; i++) assertClickRuleConfig(normalized.rules[i]!, i);
@@ -61,9 +64,6 @@ export function getDefaultWhitelistConfig(): {
   };
 }
 
-export function loadUrlExclude(): string[] {
-  return [...(urlExcludeJson as string[])];
-}
 
 export function compileFromConfig(
   blacklist: ClickRuleConfig[],

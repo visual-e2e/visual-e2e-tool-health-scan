@@ -16,5 +16,6 @@ export enum PhaseName {
   NetworkSnapshot = "network_snapshot",
   Layout = "layout",
   Navigation = "navigation",
+  Hover = "hover",
   Click = "click",
 }

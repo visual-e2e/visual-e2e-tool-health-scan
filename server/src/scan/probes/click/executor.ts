@@ -1,13 +1,15 @@
 import type { Page } from "playwright";
 import {
   ClickOutcome,
+  ClickSuccessMode,
   FailureCode,
   IssueCategory,
   IssueSeverity,
   PhaseName,
   ScanStatus,
   ScopeType,
-  SkipReason,
+  getDefaultProbeSelectors,
+  resolveProbeSelectors,
 } from "../../../types.js";
 import {
   addClickAction,
@@ -21,7 +23,8 @@ import { runLayoutProbe } from "../layout.js";
 import { runNetworkSnapshot } from "../../collectors/network.js";
 import { waitUntilStable } from "../../utils/stable-wait.js";
 import { sleep } from "../../utils/sleep.js";
-import { collectClickTargets } from "./candidates.js";
+import { capturePageFingerprint, fingerprintsDiffer } from "../../utils/page-fingerprint.js";
+import { collectClickTargets, NAV_COMPONENT } from "./candidates.js";
 import { closeTopOverlay, detectOverlayStack } from "./close.js";
 import { sortClickTargets } from "./rules.js";
 import { pickNextTarget, shouldSkipTarget } from "./policy.js";
@@ -84,11 +87,14 @@ export async function runClickProbe(session: ActiveScan, page: Page): Promise<vo
   let consecutiveErrors = 0;
   const maxDialogContentClicks = 8;
   let dialogContentClicks = 0;
+  const probe = session.options.probeSelectors ?? getDefaultProbeSelectors();
+  const resolved = resolveProbeSelectors(probe);
+  const successMode = session.options.clickSuccessMode ?? ClickSuccessMode.DomChange;
 
   while (session.clicksTried < max) {
     if (!(await waitWhilePaused(session))) return;
 
-    const overlayStack = await detectOverlayStack(page);
+    const overlayStack = await detectOverlayStack(page, resolved.overlay, resolved.overlayTitle);
     const topOverlay = overlayStack[0];
     const inOverlay = Boolean(topOverlay);
 
@@ -96,12 +102,10 @@ export async function runClickProbe(session: ActiveScan, page: Page): Promise<vo
       ? { type: ScopeType.Overlay, overlay: topOverlay }
       : { type: ScopeType.Page };
 
-    let candidates = await collectClickTargets(page, scope);
+    let candidates = await collectClickTargets(page, scope, probe);
 
     if (session.options.enableNavigationProbe) {
-      candidates = candidates.filter(
-        (c) => c.component !== "thy-nav-item" && c.component !== "thy-menu-item",
-      );
+      candidates = candidates.filter((c) => c.component !== NAV_COMPONENT);
     }
 
     const scored = sortClickTargets(candidates, session.options).filter(
@@ -118,7 +122,12 @@ export async function runClickProbe(session: ActiveScan, page: Page): Promise<vo
       if (inOverlay) {
         session.progress = `关闭浮层… (${session.clicksTried + 1}/${max})`;
         touch(session);
-        const closed = await closeTopOverlay(page);
+        const closed = await closeTopOverlay(
+          page,
+          resolved.overlayClose,
+          resolved.overlay,
+          resolved.overlayTitle,
+        );
         session.clicksTried += 1;
         dialogContentClicks = 0;
         if (!closed) {
@@ -160,14 +169,28 @@ export async function runClickProbe(session: ActiveScan, page: Page): Promise<vo
     session.status = ScanStatus.Running;
     touch(session);
 
+    const beforeFp =
+      successMode === ClickSuccessMode.DomChange
+        ? await capturePageFingerprint(page, resolved.overlay)
+        : null;
+
     let result = await tryClickTarget(page, nextScored.target);
     let failureCode = result.ok ? undefined : classifyClickFailure(result.error);
 
     if (!result.ok && failureCode) {
-      const recovered = await tryRecoverFromFailure(page, failureCode);
+      const recovered = await tryRecoverFromFailure(page, failureCode, probe);
       if (recovered) {
         result = await tryClickTarget(page, nextScored.target);
         failureCode = result.ok ? undefined : classifyClickFailure(result.error);
+      }
+    }
+
+    if (result.ok && beforeFp && successMode === ClickSuccessMode.DomChange) {
+      await page.waitForTimeout(session.options.postClickSettleMs);
+      const afterFp = await capturePageFingerprint(page, resolved.overlay);
+      if (!fingerprintsDiffer(beforeFp, afterFp)) {
+        result = { ok: false, error: "点击后页面无明显变化" };
+        failureCode = FailureCode.NoVisibleEffect;
       }
     }
 

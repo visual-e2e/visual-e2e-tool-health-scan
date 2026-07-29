@@ -1,7 +1,20 @@
-[
-  "google-analytics",
-  "googletagmanager",
-  "hm\\.baidu\\.com",
-  "sentry\\.io",
-  "hotjar"
-]
+{
+  "version": 1,
+  "type": "ignore-request",
+  "rules": [
+    {
+      "id": 1,
+      "title": "统计与埋点域名",
+      "type": "domain",
+      "op": "contains",
+      "values": [
+        "google-analytics",
+        "googletagmanager",
+        "hm\\.baidu\\.com",
+        "sentry\\.io",
+        "hotjar"
+      ],
+      "description": "第三方埋点/监控请求"
+    }
+  ]
+}

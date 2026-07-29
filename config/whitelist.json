@@ -1,5 +1,6 @@
 {
   "version": 3,
+  "type": "whitelist",
   "defaultWeight": 0,
   "rules": [
     {
@@ -7,7 +8,11 @@
       "title": "导航路由点击",
       "type": "selector",
       "op": "contains",
-      "values": ["a thy-nav-item", "thy-breadcrumb", "thy-tabs"],
+      "values": [
+        "a thy-nav-item",
+        "thy-breadcrumb",
+        "thy-tabs"
+      ],
       "weight": 90,
       "description": "导航与页签切换类交互"
     },
@@ -16,7 +21,11 @@
       "title": "侧栏菜单点击",
       "type": "selector",
       "op": "contains",
-      "values": ["thy-menu-item", "styx-category", "styx-view"],
+      "values": [
+        "thy-menu-item",
+        "styx-category",
+        "styx-view"
+      ],
       "weight": 80,
       "description": "菜单与视图切换类交互"
     },
@@ -25,7 +34,13 @@
       "title": "查询与筛选操作",
       "type": "text",
       "op": "contains",
-      "values": ["查询", "搜索", "筛选", "过滤", "高级筛选"],
+      "values": [
+        "查询",
+        "搜索",
+        "筛选",
+        "过滤",
+        "高级筛选"
+      ],
       "weight": 90,
       "description": "只读检索类操作优先放行"
     },
@@ -34,7 +49,13 @@
       "title": "查看与浏览操作",
       "type": "text",
       "op": "contains",
-      "values": ["查看", "详情", "预览", "展开", "收起"],
+      "values": [
+        "查看",
+        "详情",
+        "预览",
+        "展开",
+        "收起"
+      ],
       "weight": 80,
       "description": "浏览和信息展开类操作"
     },
@@ -43,7 +64,12 @@
       "title": "刷新与重置",
       "type": "text",
       "op": "contains",
-      "values": ["刷新", "重置", "返回", "更多"],
+      "values": [
+        "刷新",
+        "重置",
+        "返回",
+        "更多"
+      ],
       "weight": 75,
       "description": "页面状态调整但低风险的操作"
     },
@@ -52,7 +78,11 @@
       "title": "弹层安全操作",
       "type": "text",
       "op": "contains",
-      "values": ["取消", "关闭", "稍后"],
+      "values": [
+        "取消",
+        "关闭",
+        "稍后"
+      ],
       "weight": 55,
       "description": "弹层中的非破坏性退出操作"
     },
@@ -61,7 +91,12 @@
       "title": "表格和列表上下文",
       "type": "parent",
       "op": "contains",
-      "values": ["thy-table", "styx-table", "styx-board", "styx-view"],
+      "values": [
+        "thy-table",
+        "styx-table",
+        "styx-board",
+        "styx-view"
+      ],
       "weight": 65,
       "description": "在列表/看板上下文内提升可读类点击优先级"
     },
@@ -70,7 +105,12 @@
       "title": "弹层与对话框上下文",
       "type": "parent",
       "op": "contains",
-      "values": ["ant-modal", "thy-dialog-container", "thy-slide", "styx-layout"],
+      "values": [
+        "ant-modal",
+        "thy-dialog-container",
+        "thy-slide",
+        "styx-layout"
+      ],
       "weight": 60,
       "description": "在弹层容器内优先尝试非破坏性操作"
     },
@@ -79,7 +119,12 @@
       "title": "业务查询组件选择器",
       "type": "selector",
       "op": "contains",
-      "values": ["styx-view-search", "styx-list-filter", "styx-picker", "styx-member-select"],
+      "values": [
+        "styx-view-search",
+        "styx-list-filter",
+        "styx-picker",
+        "styx-member-select"
+      ],
       "weight": 85,
       "description": "业务组件库中的查询筛选类组件"
     },
@@ -89,7 +134,13 @@
       "type": "attribute",
       "attr": "data-testid",
       "op": "contains",
-      "values": ["search", "filter", "query", "view", "detail"],
+      "values": [
+        "search",
+        "filter",
+        "query",
+        "view",
+        "detail"
+      ],
       "weight": 85,
       "description": "对显式标记的查询类控件增加白名单权重"
     }

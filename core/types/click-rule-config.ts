@@ -1,6 +1,7 @@
 /** v3 click rule config — text / attribute / selector / parent */
 
 import { RuleListType } from "../enums/identity.js";
+import { RuleModuleType } from "../enums/rule-module.js";
 import { RuleOp, RuleType } from "../enums/rule.js";
 
 export interface BaseClickRuleConfig {
@@ -44,11 +45,13 @@ export type ClickRuleConfig =
 
 export interface BlacklistRuleFile {
   version: 3;
+  type: RuleModuleType.Blacklist;
   rules: ClickRuleConfig[];
 }
 
 export interface WhitelistRuleFile {
   version: 3;
+  type: RuleModuleType.Whitelist;
   defaultWeight?: number;
   rules: ClickRuleConfig[];
 }

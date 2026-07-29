@@ -25,6 +25,22 @@ export async function captureFailureScreenshot(
   }
 }
 
+export async function captureRouteScreenshot(
+  page: Page,
+  sessionId: string,
+  seq: number,
+): Promise<string | undefined> {
+  try {
+    const dir = await ensureArtifactsDir(sessionId);
+    const filename = `route-${String(seq).padStart(3, "0")}.png`;
+    const path = join(dir, filename);
+    await page.screenshot({ path, fullPage: false });
+    return path;
+  } catch {
+    return undefined;
+  }
+}
+
 export async function writeSessionReportJson(
   sessionId: string,
   reportId: string,

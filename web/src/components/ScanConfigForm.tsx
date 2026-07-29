@@ -1,5 +1,11 @@
 import { Button, Checkbox, Form, Input, InputNumber, Select, Space } from "antd";
-import { ClickPolicy, DEFAULT_SCAN_OPTIONS, type LoginProfile, type LoginSelectors } from "../types";
+import {
+  ClickPolicy,
+  ClickSuccessMode,
+  DEFAULT_SCAN_OPTIONS,
+  type LoginProfile,
+  type LoginSelectors,
+} from "../types";
 
 export interface ScanConfigFormProps {
   startUrl: string;
@@ -7,6 +13,7 @@ export interface ScanConfigFormProps {
   enableLayout: boolean;
   enableClick: boolean;
   enableNavigationProbe: boolean;
+  enableHoverProbe: boolean;
   maxClicks: number;
   clickDelayMs: number;
   settleMs: number;
@@ -16,6 +23,8 @@ export interface ScanConfigFormProps {
   autoLoginEnabled: boolean;
   enableRecording: boolean;
   enableFailureScreenshot: boolean;
+  enableRouteScreenshot: boolean;
+  clickSuccessMode: ClickSuccessMode;
   loginProfile?: LoginProfile;
   loginSelectors?: LoginSelectors;
   disabled?: boolean;
@@ -24,6 +33,7 @@ export interface ScanConfigFormProps {
   onEnableLayoutChange: (v: boolean) => void;
   onEnableClickChange: (v: boolean) => void;
   onEnableNavigationProbeChange: (v: boolean) => void;
+  onEnableHoverProbeChange: (v: boolean) => void;
   onMaxClicksChange: (v: number) => void;
   onClickDelayMsChange: (v: number) => void;
   onSettleMsChange: (v: number) => void;
@@ -33,6 +43,8 @@ export interface ScanConfigFormProps {
   onAutoLoginEnabledChange: (v: boolean) => void;
   onEnableRecordingChange: (v: boolean) => void;
   onEnableFailureScreenshotChange: (v: boolean) => void;
+  onEnableRouteScreenshotChange: (v: boolean) => void;
+  onClickSuccessModeChange: (v: ClickSuccessMode) => void;
   onLoginProfileChange: (profile: LoginProfile) => void;
   onLoginSelectorsChange: (selectors: LoginSelectors) => void;
 }
@@ -44,6 +56,7 @@ export function ScanConfigForm(props: ScanConfigFormProps) {
     enableLayout,
     enableClick,
     enableNavigationProbe,
+    enableHoverProbe,
     maxClicks,
     clickDelayMs,
     settleMs,
@@ -53,6 +66,8 @@ export function ScanConfigForm(props: ScanConfigFormProps) {
     autoLoginEnabled,
     enableRecording,
     enableFailureScreenshot,
+    enableRouteScreenshot,
+    clickSuccessMode,
     loginProfile,
     loginSelectors,
     disabled,
@@ -61,6 +76,7 @@ export function ScanConfigForm(props: ScanConfigFormProps) {
     onEnableLayoutChange,
     onEnableClickChange,
     onEnableNavigationProbeChange,
+    onEnableHoverProbeChange,
     onMaxClicksChange,
     onClickDelayMsChange,
     onSettleMsChange,
@@ -70,6 +86,8 @@ export function ScanConfigForm(props: ScanConfigFormProps) {
     onAutoLoginEnabledChange,
     onEnableRecordingChange,
     onEnableFailureScreenshotChange,
+    onEnableRouteScreenshotChange,
+    onClickSuccessModeChange,
     onLoginProfileChange,
     onLoginSelectorsChange,
   } = props;
@@ -115,7 +133,14 @@ export function ScanConfigForm(props: ScanConfigFormProps) {
             disabled={disabled || !enableClick}
             onChange={(e) => onEnableNavigationProbeChange(e.target.checked)}
           >
-            thy 导航（路由→菜单）
+            导航/菜单探测
+          </Checkbox>
+          <Checkbox
+            checked={enableHoverProbe}
+            disabled={disabled || !enableClick}
+            onChange={(e) => onEnableHoverProbeChange(e.target.checked)}
+          >
+            悬停探测
           </Checkbox>
         </Space>
       </Form.Item>
@@ -242,6 +267,18 @@ export function ScanConfigForm(props: ScanConfigFormProps) {
           </Space.Compact>
         </Space>
       </Form.Item>
+      <Form.Item label="点击判定">
+        <Select
+          style={{ width: 280 }}
+          value={clickSuccessMode}
+          disabled={disabled || !enableClick}
+          onChange={(v) => onClickSuccessModeChange(v as ClickSuccessMode)}
+          options={[
+            { value: ClickSuccessMode.DomChange, label: "页面有变化视为成功（推荐）" },
+            { value: ClickSuccessMode.ActionOk, label: "点击动作完成即成功" },
+          ]}
+        />
+      </Form.Item>
       <Form.Item label="录制">
         <Space direction="vertical">
           <Checkbox
@@ -257,6 +294,13 @@ export function ScanConfigForm(props: ScanConfigFormProps) {
             onChange={(e) => onEnableFailureScreenshotChange(e.target.checked)}
           >
             点击失败时截图
+          </Checkbox>
+          <Checkbox
+            checked={enableRouteScreenshot}
+            disabled={disabled}
+            onChange={(e) => onEnableRouteScreenshotChange(e.target.checked)}
+          >
+            路由切换时截图
           </Checkbox>
         </Space>
       </Form.Item>

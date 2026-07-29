@@ -14,11 +14,16 @@ import { useScanSession } from "../hooks/useScanSession";
 import { api } from "../api/client";
 import { downloadJson } from "../utils/download";
 import {
+  ClickSuccessMode,
   DEFAULT_SCAN_OPTIONS,
+  getDefaultProbeSelectors,
+  getDefaultIgnoreRequestRules,
   type ClickRuleConfig,
+  type IgnoreRequestRule,
   type LoginProfile,
   type LoginSelectors,
   type PersistedScanConfig,
+  type ProbeSelectorsConfig,
   type ScanProfileMeta,
 } from "../types";
 
@@ -38,6 +43,7 @@ export function ProfileDetailPage({ profileId }: ProfileDetailPageProps) {
   const [enableNavigationProbe, setEnableNavigationProbe] = useState(
     DEFAULT_SCAN_OPTIONS.enableNavigationProbe,
   );
+  const [enableHoverProbe, setEnableHoverProbe] = useState(DEFAULT_SCAN_OPTIONS.enableHoverProbe);
   const [maxClicks, setMaxClicks] = useState(DEFAULT_SCAN_OPTIONS.maxClicks);
   const [clickDelayMs, setClickDelayMs] = useState(DEFAULT_SCAN_OPTIONS.clickDelayMs);
   const [settleMs, setSettleMs] = useState(DEFAULT_SCAN_OPTIONS.settleMs);
@@ -51,6 +57,10 @@ export function ProfileDetailPage({ profileId }: ProfileDetailPageProps) {
   const [autoLoginEnabled, setAutoLoginEnabled] = useState(false);
   const [enableRecording, setEnableRecording] = useState(true);
   const [enableFailureScreenshot, setEnableFailureScreenshot] = useState(true);
+  const [enableRouteScreenshot, setEnableRouteScreenshot] = useState(false);
+  const [clickSuccessMode, setClickSuccessMode] = useState(
+    DEFAULT_SCAN_OPTIONS.clickSuccessMode ?? ClickSuccessMode.DomChange,
+  );
   const [loginProfile, setLoginProfile] = useState<LoginProfile | undefined>();
   const [loginSelectors, setLoginSelectors] = useState<LoginSelectors>(
     DEFAULT_SCAN_OPTIONS.loginSelectors ?? {},
@@ -65,6 +75,10 @@ export function ProfileDetailPage({ profileId }: ProfileDetailPageProps) {
     whitelistPath: string;
   }>();
   const [rulesSaving, setRulesSaving] = useState(false);
+  const [probeSelectors, setProbeSelectors] = useState<ProbeSelectorsConfig>(getDefaultProbeSelectors());
+  const [ignoreRequestRules, setIgnoreRequestRules] = useState<IgnoreRequestRule[]>(
+    () => getDefaultIgnoreRequestRules(),
+  );
 
   const [scanDrawerOpen, setScanDrawerOpen] = useState(false);
   const [rulesDrawerOpen, setRulesDrawerOpen] = useState(false);
@@ -82,6 +96,7 @@ export function ProfileDetailPage({ profileId }: ProfileDetailPageProps) {
     setEnableLayout(config.enableLayout);
     setEnableClick(config.enableClick);
     setEnableNavigationProbe(config.enableNavigationProbe);
+    setEnableHoverProbe(config.enableHoverProbe ?? DEFAULT_SCAN_OPTIONS.enableHoverProbe);
     setMaxClicks(config.maxClicks);
     setClickDelayMs(config.clickDelayMs);
     setSettleMs(config.settleMs);
@@ -91,6 +106,8 @@ export function ProfileDetailPage({ profileId }: ProfileDetailPageProps) {
     setAutoLoginEnabled(config.autoLoginEnabled ?? false);
     setEnableRecording(config.enableRecording ?? true);
     setEnableFailureScreenshot(config.enableFailureScreenshot ?? true);
+    setEnableRouteScreenshot(config.enableRouteScreenshot ?? false);
+    setClickSuccessMode(config.clickSuccessMode ?? ClickSuccessMode.DomChange);
     setLoginProfile(config.loginProfile);
     setLoginSelectors(config.loginSelectors ?? DEFAULT_SCAN_OPTIONS.loginSelectors ?? {});
   }, []);
@@ -103,6 +120,7 @@ export function ProfileDetailPage({ profileId }: ProfileDetailPageProps) {
       enableLayout,
       enableClick,
       enableNavigationProbe,
+      enableHoverProbe,
       maxClicks,
       maxOverlayDepth: DEFAULT_SCAN_OPTIONS.maxOverlayDepth,
       clickDelayMs,
@@ -115,12 +133,13 @@ export function ProfileDetailPage({ profileId }: ProfileDetailPageProps) {
       defaultWeight: DEFAULT_SCAN_OPTIONS.defaultWeight,
       clickSortTolerancePx: DEFAULT_SCAN_OPTIONS.clickSortTolerancePx,
       apiErrorMinStatus: DEFAULT_SCAN_OPTIONS.apiErrorMinStatus,
-      urlExclude: [...DEFAULT_SCAN_OPTIONS.urlExclude],
       autoLoginEnabled,
       loginProfile: loginProfile?.username || loginProfile?.password ? loginProfile : undefined,
       loginSelectors,
       enableRecording,
       enableFailureScreenshot,
+      enableRouteScreenshot,
+      clickSuccessMode,
     };
   }, [
     startUrl,
@@ -129,6 +148,7 @@ export function ProfileDetailPage({ profileId }: ProfileDetailPageProps) {
     enableLayout,
     enableClick,
     enableNavigationProbe,
+    enableHoverProbe,
     maxClicks,
     clickDelayMs,
     settleMs,
@@ -140,15 +160,19 @@ export function ProfileDetailPage({ profileId }: ProfileDetailPageProps) {
     loginSelectors,
     enableRecording,
     enableFailureScreenshot,
+    enableRouteScreenshot,
+    clickSuccessMode,
   ]);
 
   const loadAll = useCallback(async () => {
     setLoading(true);
     try {
-      const [meta, config, rules] = await Promise.all([
+      const [meta, config, rules, probe, exclude] = await Promise.all([
         api.getProfile(profileId),
         api.getScanConfig(profileId),
         api.getRules(profileId),
+        api.getProbeSelectors(profileId),
+        api.getUrlExclude(profileId),
       ]);
 
       let mergedConfig = config;
@@ -195,6 +219,8 @@ export function ProfileDetailPage({ profileId }: ProfileDetailPageProps) {
       setWhitelistRules(rules.whitelist.rules);
       setWhitelistDefaultWeight(rules.whitelist.defaultWeight ?? 0);
       setRulesFiles(rules.files);
+      setProbeSelectors(probe.config);
+      setIgnoreRequestRules(exclude.rules);
     } catch (err) {
       message.error(err instanceof Error ? err.message : "加载任务失败");
     } finally {
@@ -271,6 +297,48 @@ export function ProfileDetailPage({ profileId }: ProfileDetailPageProps) {
       setWhitelistRules(bundle.whitelist.rules);
       setWhitelistDefaultWeight(bundle.whitelist.defaultWeight ?? 0);
       setRulesFiles(bundle.files);
+    } finally {
+      setRulesSaving(false);
+    }
+  };
+
+  const saveProbeSelectors = async (next: ProbeSelectorsConfig) => {
+    setRulesSaving(true);
+    try {
+      const bundle = await api.saveProbeSelectors(profileId, next);
+      setProbeSelectors(bundle.config);
+    } finally {
+      setRulesSaving(false);
+    }
+  };
+
+  const resetProbeDefault = async () => {
+    setRulesSaving(true);
+    try {
+      const bundle = await api.resetProbeSelectors(profileId, "default");
+      setProbeSelectors(bundle.config);
+      message.success("已恢复产品探测模板");
+    } finally {
+      setRulesSaving(false);
+    }
+  };
+
+  const saveIgnoreRequestRules = async (next: IgnoreRequestRule[]) => {
+    setRulesSaving(true);
+    try {
+      const bundle = await api.saveUrlExclude(profileId, next);
+      setIgnoreRequestRules(bundle.rules);
+    } finally {
+      setRulesSaving(false);
+    }
+  };
+
+  const resetIgnoreRequestRules = async () => {
+    setRulesSaving(true);
+    try {
+      const bundle = await api.resetUrlExclude(profileId);
+      setIgnoreRequestRules(bundle.rules);
+      message.success("已恢复默认忽略请求");
     } finally {
       setRulesSaving(false);
     }
@@ -361,6 +429,7 @@ export function ProfileDetailPage({ profileId }: ProfileDetailPageProps) {
         enableLayout={enableLayout}
         enableClick={enableClick}
         enableNavigationProbe={enableNavigationProbe}
+        enableHoverProbe={enableHoverProbe}
         maxClicks={maxClicks}
         clickDelayMs={clickDelayMs}
         settleMs={settleMs}
@@ -378,6 +447,7 @@ export function ProfileDetailPage({ profileId }: ProfileDetailPageProps) {
         onEnableLayoutChange={setEnableLayout}
         onEnableClickChange={setEnableClick}
         onEnableNavigationProbeChange={setEnableNavigationProbe}
+        onEnableHoverProbeChange={setEnableHoverProbe}
         onMaxClicksChange={setMaxClicks}
         onClickDelayMsChange={setClickDelayMs}
         onSettleMsChange={setSettleMs}
@@ -387,6 +457,10 @@ export function ProfileDetailPage({ profileId }: ProfileDetailPageProps) {
         onAutoLoginEnabledChange={setAutoLoginEnabled}
         onEnableRecordingChange={setEnableRecording}
         onEnableFailureScreenshotChange={setEnableFailureScreenshot}
+        enableRouteScreenshot={enableRouteScreenshot}
+        onEnableRouteScreenshotChange={setEnableRouteScreenshot}
+        clickSuccessMode={clickSuccessMode}
+        onClickSuccessModeChange={setClickSuccessMode}
         onLoginProfileChange={setLoginProfile}
         onLoginSelectorsChange={setLoginSelectors}
       />
@@ -403,6 +477,8 @@ export function ProfileDetailPage({ profileId }: ProfileDetailPageProps) {
         blacklistRules={blacklistRules}
         whitelistRules={whitelistRules}
         whitelistDefaultWeight={whitelistDefaultWeight}
+        probeSelectors={probeSelectors}
+        ignoreRequestRules={ignoreRequestRules}
         filesInfo={rulesFiles}
         saving={rulesSaving}
         disabled={configLocked}
@@ -413,6 +489,12 @@ export function ProfileDetailPage({ profileId }: ProfileDetailPageProps) {
         }}
         onBlacklistChange={setBlacklistRules}
         onWhitelistChange={setWhitelistRules}
+        onProbeSelectorsChange={setProbeSelectors}
+        onSaveProbeSelectors={saveProbeSelectors}
+        onResetProbeDefault={resetProbeDefault}
+        onIgnoreRequestRulesChange={setIgnoreRequestRules}
+        onSaveIgnoreRequestRules={saveIgnoreRequestRules}
+        onResetIgnoreRequestRules={resetIgnoreRequestRules}
       />
     </main>
   );

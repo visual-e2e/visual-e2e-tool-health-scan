@@ -58,7 +58,12 @@ export async function migrateLegacyConfigIfNeeded(toolId = resolveToolId()): Pro
   await mkdir(targetDir, { recursive: true });
   const files = await readdir(legacyDir);
   // Only migrate rule files — never copy Host browser settings into tool config
-  const ruleFiles = new Set(["blacklist.json", "whitelist.json"]);
+  const ruleFiles = new Set([
+    "blacklist.json",
+    "whitelist.json",
+    "probe-selectors.json",
+    "url-exclude.json",
+  ]);
   for (const file of files) {
     if (ruleFiles.has(file)) {
       await cp(join(legacyDir, file), join(targetDir, file));

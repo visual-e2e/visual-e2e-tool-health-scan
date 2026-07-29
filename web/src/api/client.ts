@@ -3,11 +3,13 @@ import type {
   ClickRuleConfig,
   CreateProfilePayload,
   HostProjectContext,
+  IgnoreRequestRule,
   LoginDefaults,
   LoginProfile,
   LoginSelectors,
   PersistedScanConfig,
   ProjectMeta,
+  ProbeSelectorsConfig,
   ReportMeta,
   ReportRecord,
   RuleListType,
@@ -109,6 +111,36 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ list }),
     }),
+
+  getProbeSelectors: (profileId: string) =>
+    request<{ config: ProbeSelectorsConfig; files: { path: string; baseDir: string } }>(
+      `/api/profiles/${profileId}/probe-selectors`,
+    ),
+  saveProbeSelectors: (profileId: string, body: ProbeSelectorsConfig) =>
+    request<{ config: ProbeSelectorsConfig; files: { path: string; baseDir: string } }>(
+      `/api/profiles/${profileId}/probe-selectors`,
+      { method: "PUT", body: JSON.stringify(body) },
+    ),
+  resetProbeSelectors: (profileId: string, mode: "default" | "generic" = "default") =>
+    request<{ config: ProbeSelectorsConfig; files: { path: string; baseDir: string } }>(
+      `/api/profiles/${profileId}/probe-selectors/reset`,
+      { method: "POST", body: JSON.stringify({ mode }) },
+    ),
+
+  getUrlExclude: (profileId: string) =>
+    request<{ rules: IgnoreRequestRule[]; files: { path: string; baseDir: string } }>(
+      `/api/profiles/${profileId}/url-exclude`,
+    ),
+  saveUrlExclude: (profileId: string, rules: IgnoreRequestRule[]) =>
+    request<{ rules: IgnoreRequestRule[]; files: { path: string; baseDir: string } }>(
+      `/api/profiles/${profileId}/url-exclude`,
+      { method: "PUT", body: JSON.stringify({ rules }) },
+    ),
+  resetUrlExclude: (profileId: string) =>
+    request<{ rules: IgnoreRequestRule[]; files: { path: string; baseDir: string } }>(
+      `/api/profiles/${profileId}/url-exclude/reset`,
+      { method: "POST", body: "{}" },
+    ),
 
   listReports: (profileId?: string) =>
     request<{ reports: ReportMeta[] }>(
