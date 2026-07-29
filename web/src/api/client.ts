@@ -166,8 +166,14 @@ export const api = {
   deleteReport: (reportId: string) =>
     request<{ ok: boolean }>(`/api/reports/${reportId}`, { method: "DELETE" }),
   openReportsDir: () => request<{ path: string }>("/api/reports/open-dir", { method: "POST", body: "{}" }),
-  artifactUrl: (sessionId: string, filename: string) =>
-    `/api/artifacts/${encodeURIComponent(sessionId)}/${encodeURIComponent(filename)}`,
+  artifactUrl: (sessionId: string, filename: string) => {
+    const safePath = filename
+      .split("/")
+      .filter(Boolean)
+      .map((seg) => encodeURIComponent(seg))
+      .join("/");
+    return `/api/artifacts/${encodeURIComponent(sessionId)}/${safePath}`;
+  },
 };
 
 export type { LoginProfile, LoginSelectors, PersistedScanConfig };

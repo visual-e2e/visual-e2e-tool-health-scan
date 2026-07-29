@@ -1,9 +1,9 @@
-import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { randomUUID } from "node:crypto";
 import type { ReportMeta, ReportRecord, ScanSessionView, UpdateReportPayload } from "../types.js";
-import { resolveToolReportsDir, resolveSessionArtifactsDir } from "../storage/paths.js";
+import { resolveReportDir, resolveToolReportsDir } from "../storage/paths.js";
 import { writeSessionReportJson } from "./artifact-writer.js";
 
 const INDEX_FILE = "index.json";
@@ -41,12 +41,19 @@ function defaultReportName(session: ScanSessionView): string {
 
 export async function saveReportFromSession(
   session: ScanSessionView,
-  extra?: { name?: string; description?: string; projectId?: string; profileId?: string },
+  extra?: {
+    name?: string;
+    description?: string;
+    projectId?: string;
+    profileId?: string;
+    reportId?: string;
+  },
 ): Promise<ReportMeta> {
-  const reportId = randomUUID();
+  const reportId = extra?.reportId?.trim() || randomUUID();
   const now = new Date().toISOString();
-  const artifactsDir = resolveSessionArtifactsDir(session.sessionId);
-  const reportPath = await writeSessionReportJson(session.sessionId, reportId, session);
+  const artifactsDir = resolveReportDir(extra?.projectId, reportId);
+  const reportPath = await writeSessionReportJson(extra?.projectId, reportId, session);
+  const copiedVideoPath = await copyVideoIfExists(session.videoPath, artifactsDir);
 
   const meta: ReportMeta = {
     id: reportId,
@@ -62,7 +69,7 @@ export async function saveReportFromSession(
     summary: session.summary,
     reportPath,
     artifactsDir,
-    videoPath: session.videoPath,
+    videoPath: copiedVideoPath || session.videoPath,
   };
 
   const index = await readIndex();
@@ -120,4 +127,17 @@ export async function openReportsDir(): Promise<string> {
   const dir = resolveToolReportsDir();
   await mkdir(dir, { recursive: true });
   return dir;
+}
+
+async function copyVideoIfExists(videoPath: string | undefined, reportDir: string): Promise<string | undefined> {
+  if (!videoPath || !existsSync(videoPath)) return undefined;
+  const targetDir = join(reportDir, "videos");
+  await mkdir(targetDir, { recursive: true });
+  const target = join(targetDir, basename(videoPath) || "scan.webm");
+  try {
+    await copyFile(videoPath, target);
+    return target;
+  } catch {
+    return undefined;
+  }
 }

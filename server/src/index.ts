@@ -427,13 +427,14 @@ app.post("/api/reports/open-dir", async () => {
   return { path: dir };
 });
 
-app.get<{ Params: { sessionId: string; filename: string } }>(
-  "/api/artifacts/:sessionId/:filename",
+app.get<{ Params: { sessionId: string; "*": string } }>(
+  "/api/artifacts/:sessionId/*",
   async (req, reply) => {
     const dir = resolveSessionArtifactsDir(req.params.sessionId);
-    const filePath = join(dir, req.params.filename);
+    const relPath = req.params["*"] || "";
+    const filePath = join(dir, relPath);
     if (!existsSync(filePath)) return reply.status(404).send({ error: "文件不存在" });
-    return reply.sendFile(req.params.filename, dir);
+    return reply.sendFile(relPath, dir);
   },
 );
 

@@ -1,21 +1,48 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Page } from "playwright";
-import { resolveSessionArtifactsDir } from "../storage/paths.js";
+import {
+  resolveReportDir,
+  resolveReportJsonPath,
+  resolveReportLogPath,
+  resolveReportScreenshotsDir,
+  resolveReportVideosDir,
+} from "../storage/paths.js";
 
-export async function ensureArtifactsDir(sessionId: string): Promise<string> {
-  const dir = resolveSessionArtifactsDir(sessionId);
+export async function ensureArtifactsDir(projectId: string | undefined, reportId: string): Promise<string> {
+  const dir = resolveReportDir(projectId, reportId);
   await mkdir(dir, { recursive: true });
   return dir;
 }
 
+export async function ensureReportVideosDir(
+  projectId: string | undefined,
+  reportId: string,
+): Promise<string> {
+  const dir = resolveReportVideosDir(projectId, reportId);
+  await mkdir(dir, { recursive: true });
+  return dir;
+}
+
+export async function appendReportLogLine(
+  projectId: string | undefined,
+  reportId: string,
+  line: string,
+): Promise<void> {
+  const path = resolveReportLogPath(projectId, reportId);
+  await mkdir(join(path, ".."), { recursive: true });
+  await appendFile(path, line.endsWith("\n") ? line : `${line}\n`, "utf-8");
+}
+
 export async function captureFailureScreenshot(
   page: Page,
-  sessionId: string,
+  projectId: string | undefined,
+  reportId: string,
   issueId: string,
 ): Promise<string | undefined> {
   try {
-    const dir = await ensureArtifactsDir(sessionId);
+    const dir = resolveReportScreenshotsDir(projectId, reportId);
+    await mkdir(dir, { recursive: true });
     const filename = `issue-${issueId.slice(0, 8)}.png`;
     const path = join(dir, filename);
     await page.screenshot({ path, fullPage: false });
@@ -27,11 +54,13 @@ export async function captureFailureScreenshot(
 
 export async function captureRouteScreenshot(
   page: Page,
-  sessionId: string,
+  projectId: string | undefined,
+  reportId: string,
   seq: number,
 ): Promise<string | undefined> {
   try {
-    const dir = await ensureArtifactsDir(sessionId);
+    const dir = resolveReportScreenshotsDir(projectId, reportId);
+    await mkdir(dir, { recursive: true });
     const filename = `route-${String(seq).padStart(3, "0")}.png`;
     const path = join(dir, filename);
     await page.screenshot({ path, fullPage: false });
@@ -42,12 +71,12 @@ export async function captureRouteScreenshot(
 }
 
 export async function writeSessionReportJson(
-  sessionId: string,
+  projectId: string | undefined,
   reportId: string,
   data: unknown,
 ): Promise<string> {
-  const dir = await ensureArtifactsDir(sessionId);
-  const path = join(dir, `report-${reportId}.json`);
+  const path = resolveReportJsonPath(projectId, reportId);
+  await mkdir(join(path, ".."), { recursive: true });
   await writeFile(path, `${JSON.stringify(data, null, 2)}\n`, "utf-8");
   return path;
 }

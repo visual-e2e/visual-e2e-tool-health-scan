@@ -1,10 +1,14 @@
-import { randomUUID } from "node:crypto";
 import { bootstrapHostPaths } from "../host-paths.js";
 import { resolveBrowserLaunch } from "../resolve-browser.js";
 import { attemptAutoLogin } from "../auth/auto-login.js";
 import { saveReportFromSession } from "../report/report-store.js";
 import { touchProfileAfterScan, resolveProfileScanOptions } from "../profile/profile-store.js";
-import { ensureArtifactsDir, captureRouteScreenshot } from "../report/artifact-writer.js";
+import {
+  appendReportLogLine,
+  captureRouteScreenshot,
+  ensureArtifactsDir,
+  ensureReportVideosDir,
+} from "../report/artifact-writer.js";
 import {
   DEFAULT_SCAN_OPTIONS,
   getDefaultBlacklistConfig,
@@ -33,6 +37,35 @@ import { waitUntilStable } from "./utils/stable-wait.js";
 import { sleep } from "./utils/sleep.js";
 
 const sessions = new Map<string, ActiveScan>();
+
+function formatReportId(date = new Date()): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return [
+    date.getFullYear(),
+    pad(date.getMonth() + 1),
+    pad(date.getDate()),
+    pad(date.getHours()),
+    pad(date.getMinutes()),
+    pad(date.getSeconds()),
+  ].join("");
+}
+
+function buildSessionId(): string {
+  const base = formatReportId();
+  if (!sessions.has(base)) return base;
+  let i = 1;
+  while (sessions.has(`${base}-${i}`)) i += 1;
+  return `${base}-${i}`;
+}
+
+async function logLine(session: ActiveScan, line: string): Promise<void> {
+  const reportId = session.reportId || session.id;
+  try {
+    await appendReportLogLine(session.projectId, reportId, `${nowIso()} ${line}`);
+  } catch {
+    // do not fail scan for logging issues
+  }
+}
 
 async function waitUntilReadyToScan(session: ActiveScan): Promise<boolean> {
   session.status = ScanStatus.Ready;
@@ -213,6 +246,7 @@ async function runScan(session: ActiveScan): Promise<void> {
     session.status = ScanStatus.Starting;
     session.progress = "启动浏览器…";
     touch(session);
+    await logLine(session, "[system] 启动浏览器");
 
     bootstrapHostPaths({
       hostRuntime: session.hostRuntime,
@@ -223,6 +257,7 @@ async function runScan(session: ActiveScan): Promise<void> {
     if (!launch.ok) {
       throw new Error(launch.hints.join("; ") || "浏览器未就绪");
     }
+    await logLine(session, "[system] 浏览器环境就绪");
 
     if (session.options.enableRecording && !launch.env.PLAYWRIGHT_BROWSERS_PATH?.trim()) {
       throw new Error("录屏需要 ffmpeg，请先在主应用安装浏览器运行时");
@@ -244,15 +279,16 @@ async function runScan(session: ActiveScan): Promise<void> {
     });
     session.browser = browser;
 
+    const reportId = session.reportId || session.id;
     const context = await browser.newContext({
       viewport: launch.settings.viewport,
       locale: "zh-CN",
       recordVideo: session.options.enableRecording
-        ? { dir: await ensureArtifactsDir(session.id), size: launch.settings.viewport }
+        ? { dir: await ensureReportVideosDir(session.projectId, reportId), size: launch.settings.viewport }
         : undefined,
     });
     session.context = context;
-    session.artifactsDir = await ensureArtifactsDir(session.id);
+    session.artifactsDir = await ensureArtifactsDir(session.projectId, reportId);
     context.setDefaultTimeout(launch.settings.timeout);
     context.setDefaultNavigationTimeout(launch.settings.timeout);
 
@@ -277,7 +313,7 @@ async function runScan(session: ActiveScan): Promise<void> {
             if (!key || key === lastRouteKey) return;
             lastRouteKey = key;
             routeSeq += 1;
-            await captureRouteScreenshot(page, session.id, routeSeq);
+            await captureRouteScreenshot(page, session.projectId, reportId, routeSeq);
             session.currentUrl = url;
             touch(session);
           } catch {
@@ -295,6 +331,7 @@ async function runScan(session: ActiveScan): Promise<void> {
     markPhase(session, PhaseName.Navigate, false);
 
     await page.goto(session.options.startUrl, { waitUntil: "domcontentloaded" });
+    await logLine(session, `[system] 打开页面 ${session.options.startUrl}`);
     session.currentUrl = page.url();
     await page.waitForTimeout(session.options.settleMs);
     markPhase(session, PhaseName.Navigate, true);
@@ -316,12 +353,14 @@ async function runScan(session: ActiveScan): Promise<void> {
 
     if (session.abort) {
       session.status = ScanStatus.Cancelled;
+      await logLine(session, "[system] 扫描已取消");
       return;
     }
 
     const started = await waitUntilReadyToScan(session);
     if (!started) {
       session.status = ScanStatus.Cancelled;
+      await logLine(session, "[system] 扫描已取消");
       return;
     }
 
@@ -332,6 +371,7 @@ async function runScan(session: ActiveScan): Promise<void> {
     session.status = ScanStatus.Running;
     session.progress = "开始扫描…";
     touch(session);
+    await logLine(session, "[system] 开始扫描");
 
     await waitUntilStable(page, {
       settleMs: session.options.settleMs,
@@ -341,6 +381,7 @@ async function runScan(session: ActiveScan): Promise<void> {
     if (session.options.enableNetwork) {
       if (!(await waitWhilePaused(session))) {
         session.status = ScanStatus.Cancelled;
+        await logLine(session, "[system] 扫描已取消");
         return;
       }
       await runNetworkSnapshot(session, page);
@@ -349,6 +390,7 @@ async function runScan(session: ActiveScan): Promise<void> {
     if (session.options.enableLayout) {
       if (!(await waitWhilePaused(session))) {
         session.status = ScanStatus.Cancelled;
+        await logLine(session, "[system] 扫描已取消");
         return;
       }
       await runLayoutProbe(session, page);
@@ -362,6 +404,7 @@ async function runScan(session: ActiveScan): Promise<void> {
     if (session.options.enableClick && session.options.enableNavigationProbe) {
       if (!(await waitWhilePaused(session))) {
         session.status = ScanStatus.Cancelled;
+        await logLine(session, "[system] 扫描已取消");
         return;
       }
       await runNavigationProbe(session, page);
@@ -370,6 +413,7 @@ async function runScan(session: ActiveScan): Promise<void> {
     if (session.options.enableClick && session.options.enableHoverProbe) {
       if (!(await waitWhilePaused(session))) {
         session.status = ScanStatus.Cancelled;
+        await logLine(session, "[system] 扫描已取消");
         return;
       }
       await runHoverProbe(session, page);
@@ -378,6 +422,7 @@ async function runScan(session: ActiveScan): Promise<void> {
     if (session.options.enableClick) {
       if (!(await waitWhilePaused(session))) {
         session.status = ScanStatus.Cancelled;
+        await logLine(session, "[system] 扫描已取消");
         return;
       }
       await runClickProbe(session, page);
@@ -385,14 +430,17 @@ async function runScan(session: ActiveScan): Promise<void> {
 
     if (session.abort) {
       session.status = ScanStatus.Cancelled;
+      await logLine(session, "[system] 扫描已取消");
     } else {
       session.status = ScanStatus.Done;
       session.progress = "扫描完成";
+      await logLine(session, "[system] 扫描完成");
     }
   } catch (err) {
     session.status = ScanStatus.Error;
     session.error = err instanceof Error ? err.message : String(err);
     session.progress = undefined;
+    await logLine(session, `[error] ${session.error}`);
   } finally {
     if (session.page && session.context && session.options.enableRecording) {
       const video = session.page.video();
@@ -415,7 +463,9 @@ async function runScan(session: ActiveScan): Promise<void> {
       try {
         const view = toView(session);
         const meta = await saveReportFromSession(view, {
+          projectId: session.projectId,
           profileId: session.profileId,
+          reportId: session.reportId || session.id,
         });
         session.reportId = meta.id;
         if (meta.videoPath) session.videoPath = meta.videoPath;
@@ -435,6 +485,7 @@ export async function createScan(
   input: Partial<ScanOptions> & {
     startUrl?: string;
     profileId?: string;
+    projectId?: string;
     hostRuntime?: ActiveScan["hostRuntime"];
     hostDataDir?: ActiveScan["hostDataDir"];
   },
@@ -449,7 +500,7 @@ export async function createScan(
   if (!startUrl) throw new Error("startUrl 不能为空");
 
   const options = normalizeOptions({ ...resolvedInput, startUrl });
-  const id = randomUUID();
+  const id = buildSessionId();
   const now = nowIso();
   const session: ActiveScan = {
     id,
@@ -470,7 +521,9 @@ export async function createScan(
     abort: false,
     pauseRequested: false,
     collecting: false,
+    projectId: resolvedInput.projectId?.trim(),
     profileId: input.profileId,
+    reportId: id,
     hostRuntime: input.hostRuntime,
     hostDataDir: input.hostDataDir,
   };

@@ -38,6 +38,7 @@ export interface ActiveScan {
   abort: boolean;
   pauseRequested: boolean;
   collecting: boolean;
+  projectId?: string;
   profileId?: string;
   hostRuntime?: HostRuntimeInput;
   hostDataDir?: HostDataDirInput;

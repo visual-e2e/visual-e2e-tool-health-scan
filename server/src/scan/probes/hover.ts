@@ -25,6 +25,91 @@ import {
 } from "../utils/page-fingerprint.js";
 import { sleep } from "../utils/sleep.js";
 
+interface HoverStyleSnapshot {
+  found: boolean;
+  signature: string;
+  hasHoverRule: boolean;
+}
+
+async function captureHoverStyleSnapshot(
+  page: Page,
+  target: ActiveScan["clickActions"][number]["target"],
+): Promise<HoverStyleSnapshot> {
+  const { top, left, width, height } = target.position;
+  const cx = left + width / 2;
+  const cy = top + height / 2;
+  return page.evaluate(
+    ({ x, y }) => {
+      const el = document.elementFromPoint(x, y) as HTMLElement | null;
+      if (!el) {
+        return { found: false, signature: "", hasHoverRule: false };
+      }
+      const style = window.getComputedStyle(el);
+      const signature = [
+        style.color,
+        style.backgroundColor,
+        style.borderColor,
+        style.opacity,
+        style.transform,
+        style.boxShadow,
+        style.filter,
+        style.textDecorationColor,
+        style.cursor,
+        el.className ?? "",
+        el.getAttribute("style") ?? "",
+      ].join("|");
+
+      let hasHoverRule = false;
+      const candidates = new Set<string>();
+      if (el.id) candidates.add(`#${el.id}`);
+      if (el.tagName) candidates.add(el.tagName.toLowerCase());
+      for (const cls of Array.from(el.classList)) candidates.add(`.${cls}`);
+
+      const matchesHoverSelector = (selectorText: string): boolean => {
+        if (!selectorText.includes(":hover")) return false;
+        const base = selectorText.replace(/:hover/g, "").trim();
+        if (!base) return false;
+        try {
+          return el.matches(base);
+        } catch {
+          return false;
+        }
+      };
+
+      for (const sheet of Array.from(document.styleSheets)) {
+        let rules: CSSRuleList | null = null;
+        try {
+          rules = sheet.cssRules;
+        } catch {
+          continue;
+        }
+        if (!rules) continue;
+        for (const rule of Array.from(rules)) {
+          if (rule.type !== CSSRule.STYLE_RULE) continue;
+          const styleRule = rule as CSSStyleRule;
+          const selector = styleRule.selectorText || "";
+          if (!selector.includes(":hover")) continue;
+          if (matchesHoverSelector(selector)) {
+            hasHoverRule = true;
+            break;
+          }
+          for (const candidate of candidates) {
+            if (selector.includes(`${candidate}:hover`)) {
+              hasHoverRule = true;
+              break;
+            }
+          }
+          if (hasHoverRule) break;
+        }
+        if (hasHoverRule) break;
+      }
+
+      return { found: true, signature, hasHoverRule };
+    },
+    { x: cx, y: cy },
+  );
+}
+
 async function waitWhilePaused(session: ActiveScan): Promise<boolean> {
   while (!session.abort && (session.pauseRequested || session.status === ScanStatus.Paused)) {
     if (session.status !== ScanStatus.Paused) {
@@ -77,6 +162,7 @@ export async function runHoverProbe(session: ActiveScan, page: Page): Promise<vo
       mode === ClickSuccessMode.DomChange
         ? await capturePageFingerprint(page, resolved.overlay)
         : null;
+    const beforeStyle = await captureHoverStyleSnapshot(page, item.target);
 
     const result = await tryHoverTarget(page, item.target);
     session.clicksTried += 1;
@@ -86,7 +172,14 @@ export async function runHoverProbe(session: ActiveScan, page: Page): Promise<vo
     if (ok && beforeFp && mode === ClickSuccessMode.DomChange) {
       await page.waitForTimeout(session.options.postClickSettleMs);
       const afterFp = await capturePageFingerprint(page, resolved.overlay);
-      if (!fingerprintsDiffer(beforeFp, afterFp)) {
+      const afterStyle = await captureHoverStyleSnapshot(page, item.target);
+      const domChanged = fingerprintsDiffer(beforeFp, afterFp);
+      const styleChanged =
+        beforeStyle.found &&
+        afterStyle.found &&
+        beforeStyle.signature !== afterStyle.signature;
+      const hasHoverStyleRule = beforeStyle.hasHoverRule || afterStyle.hasHoverRule;
+      if (!domChanged && !styleChanged && !hasHoverStyleRule) {
         ok = false;
         error = FailureCode.NoVisibleEffect;
       }
