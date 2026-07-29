@@ -1,6 +1,8 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
+import type { HostRuntimeInput } from "./host-paths.js";
+import { applyHostRuntimeEnv } from "./host-paths.js";
 import { resolveHostConfigDir, resolveE2eRoot, resolveRuntime, resolveSettingsPath } from "./paths.js";
 
 export interface BrowserSettings {
@@ -110,21 +112,47 @@ function withBrowsersPath(
   return { ...env, PLAYWRIGHT_BROWSERS_PATH: path };
 }
 
-export async function resolveBrowserLaunch(): Promise<BrowserLaunchResolution> {
+function envFromHostRuntime(hostRuntime?: HostRuntimeInput): Record<string, string> {
+  const env: Record<string, string> = {};
+  const browserPath = hostRuntime?.browser_path?.trim();
+  const ffmpegPath = hostRuntime?.ffmpeg_path?.trim();
+  if (browserPath) env.CHROMIUM_EXECUTABLE_PATH = browserPath;
+  if (ffmpegPath) env.PLAYWRIGHT_BROWSERS_PATH = dirname(dirname(ffmpegPath));
+  return env;
+}
+
+export async function resolveBrowserLaunch(
+  hostRuntime?: HostRuntimeInput,
+): Promise<BrowserLaunchResolution> {
+  applyHostRuntimeEnv(hostRuntime);
+
   const e2eRoot = resolveE2eRoot();
   const configDir = resolveHostConfigDir(e2eRoot);
   const runtime = resolveRuntime();
   const settings = readBrowserSettings(configDir);
+  const hostEnv = envFromHostRuntime(hostRuntime);
   const runtimeMod = join(e2eRoot, "scripts/lib/browser-runtime.mjs");
 
-  // Prefer Host browser-runtime so PLAYWRIGHT_BROWSERS_PATH points at managed ffmpeg/chromium.
+  if (hostRuntime?.browser_path?.trim() && hostRuntime?.ffmpeg_path?.trim()) {
+    const executablePath = hostRuntime.browser_path.trim();
+    return {
+      ok: true,
+      executablePath,
+      env: { ...hostEnv },
+      path: executablePath,
+      version: "",
+      hints: [],
+      settings,
+    };
+  }
+
   if (existsSync(runtimeMod)) {
     const lib = await loadBrowserRuntimeLib(e2eRoot);
     const resolved = await lib.resolveLaunchEnv(configDir, e2eRoot, runtime);
     const check = resolved.check ?? { path: "", version: "", hints: [] as string[] };
 
     if (resolved.ok) {
-      let env = withBrowsersPath({ ...resolved.env }, configDir);
+      let env = withBrowsersPath({ ...resolved.env, ...hostEnv }, configDir);
       const overrideExe = process.env.CHROMIUM_EXECUTABLE_PATH?.trim();
       if (overrideExe) {
         env = { ...env, CHROMIUM_EXECUTABLE_PATH: overrideExe };
@@ -142,9 +170,10 @@ export async function resolveBrowserLaunch(): Promise<BrowserLaunchResolution> {
       };
     }
 
-    // Runtime not ready — still attach managed browsers path when caller only has chromium exe
-    const customExecutable = process.env.CHROMIUM_EXECUTABLE_PATH?.trim();
+    const customExecutable =
+      hostRuntime?.browser_path?.trim() || process.env.CHROMIUM_EXECUTABLE_PATH?.trim();
     const managed =
+      hostEnv.PLAYWRIGHT_BROWSERS_PATH ||
       lib.resolveEffectiveFfmpegDir?.(configDir, e2eRoot, runtime) ||
       lib.resolveEffectiveManagedBrowsersDir?.(configDir, e2eRoot, runtime) ||
       inferManagedBrowsersPath(configDir);
@@ -152,11 +181,7 @@ export async function resolveBrowserLaunch(): Promise<BrowserLaunchResolution> {
       return {
         ok: true,
         executablePath: customExecutable,
-        env: withBrowsersPath(
-          { CHROMIUM_EXECUTABLE_PATH: customExecutable },
-          configDir,
-          managed,
-        ),
+        env: withBrowsersPath({ CHROMIUM_EXECUTABLE_PATH: customExecutable, ...hostEnv }, configDir, managed),
         path: customExecutable,
         version: "",
         hints: [],
@@ -175,12 +200,15 @@ export async function resolveBrowserLaunch(): Promise<BrowserLaunchResolution> {
   }
 
   const browsersPath =
-    process.env.PLAYWRIGHT_BROWSERS_PATH?.trim() || inferManagedBrowsersPath(configDir);
-  const customExecutable = process.env.CHROMIUM_EXECUTABLE_PATH?.trim();
+    hostEnv.PLAYWRIGHT_BROWSERS_PATH ||
+    process.env.PLAYWRIGHT_BROWSERS_PATH?.trim() ||
+    inferManagedBrowsersPath(configDir);
+  const customExecutable =
+    hostRuntime?.browser_path?.trim() || process.env.CHROMIUM_EXECUTABLE_PATH?.trim();
 
   if (customExecutable || browsersPath) {
     const env = withBrowsersPath(
-      customExecutable ? { CHROMIUM_EXECUTABLE_PATH: customExecutable } : {},
+      customExecutable ? { CHROMIUM_EXECUTABLE_PATH: customExecutable, ...hostEnv } : { ...hostEnv },
       configDir,
       browsersPath,
     );
@@ -205,13 +233,13 @@ export async function resolveBrowserLaunch(): Promise<BrowserLaunchResolution> {
   };
 }
 
-export async function getBrowserStatus(): Promise<{
+export async function getBrowserStatus(hostRuntime?: HostRuntimeInput): Promise<{
   ok: boolean;
   path: string;
   version: string;
   hints: string[];
 }> {
-  const result = await resolveBrowserLaunch();
+  const result = await resolveBrowserLaunch(hostRuntime);
   return {
     ok: result.ok,
     path: result.path,

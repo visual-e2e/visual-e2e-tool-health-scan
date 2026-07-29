@@ -1,9 +1,10 @@
 import { cp, mkdir, readdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { homedir } from "node:os";
+import { getHostDataDir } from "../host-paths.js";
 
-export function resolveClientStorageRoot(): string {
+function legacyClientStorageRoot(): string {
   if (process.platform === "darwin") {
     return join(homedir(), "Library", "Application Support", "visual-e2e-test", "Storage");
   }
@@ -12,6 +13,19 @@ export function resolveClientStorageRoot(): string {
     if (appdata) return join(appdata, "visual-e2e-test", "Storage");
   }
   return join(homedir(), ".local", "share", "visual-e2e-test", "Storage");
+}
+
+export function resolveClientStorageRoot(): string {
+  const fromRpc = getHostDataDir()?.storage?.trim();
+  if (fromRpc) return fromRpc;
+
+  const configDir = process.env.CONFIG_DIR?.trim();
+  if (configDir) {
+    const parent = dirname(configDir);
+    if (basename(parent) === "Storage") return parent;
+  }
+
+  return legacyClientStorageRoot();
 }
 
 export function resolveToolId(): string {
@@ -49,6 +63,7 @@ export function resolveProfileScanConfigPath(profileId: string, toolId = resolve
 export function resolveProfileConfigDir(profileId: string, toolId = resolveToolId()): string {
   return join(resolveProfileDir(profileId, toolId), "config");
 }
+
 export async function migrateLegacyConfigIfNeeded(toolId = resolveToolId()): Promise<void> {
   const legacyDir = join(resolveClientStorageRoot(), "config");
   const targetDir = resolveToolConfigDir(toolId);
@@ -57,7 +72,6 @@ export async function migrateLegacyConfigIfNeeded(toolId = resolveToolId()): Pro
   }
   await mkdir(targetDir, { recursive: true });
   const files = await readdir(legacyDir);
-  // Only migrate rule files — never copy Host browser settings into tool config
   const ruleFiles = new Set([
     "blacklist.json",
     "whitelist.json",

@@ -14,6 +14,27 @@ export interface HostProjectContext {
   scenariosRelPath?: string;
 }
 
+export interface HostRuntimePaths {
+  browser_path: string;
+  ffmpeg_path: string;
+}
+
+export interface HostDataDirPaths {
+  storage: string;
+  path: string;
+  projects: string;
+  config: string;
+  e2e_root: string;
+  tools: string;
+}
+
+export interface CreateScanPayload {
+  profileId?: string;
+  startUrl?: string;
+  hostRuntime?: HostRuntimePaths;
+  hostDataDir?: HostDataDirPaths;
+}
+
 export interface ProjectMeta {
   id: string;
   name: string;

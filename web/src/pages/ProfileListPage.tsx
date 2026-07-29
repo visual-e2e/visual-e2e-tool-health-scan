@@ -15,6 +15,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { ColumnsType } from "antd/es/table";
 import { api } from "../api/client";
 import { useHostContext } from "../hooks/useHostContext";
+import { fetchLoginDefaults } from "../lib/host-runtime";
 import { navigateToProfile } from "../hooks/useHashRoute";
 import type { ScanProfileMeta, LoginDefaults } from "../types";
 
@@ -69,7 +70,7 @@ export function ProfileListPage() {
       let defaults: LoginDefaults = {};
       if (projectId) {
         try {
-          defaults = await api.loginDefaults(projectId);
+          defaults = await fetchLoginDefaults(projectId);
         } catch {
           // project may not have .env yet
         }

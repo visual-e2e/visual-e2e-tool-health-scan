@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { getHostDataDir } from "./host-paths.js";
 import { resolveClientStorageRoot } from "./storage/paths.js";
 
 export const Runtime = {
@@ -11,6 +12,8 @@ export const Runtime = {
 export type Runtime = (typeof Runtime)[keyof typeof Runtime];
 
 export function resolveE2eRoot(): string {
+  const fromRpc = getHostDataDir()?.e2e_root?.trim();
+  if (fromRpc) return resolve(fromRpc);
   const fromEnv = process.env.E2E_ROOT?.trim();
   if (fromEnv) return resolve(fromEnv);
   return resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");
@@ -23,6 +26,8 @@ export { resolveClientStorageRoot } from "./storage/paths.js";
  * Must be used for browser-runtime / settings — NOT tool-scoped config.
  */
 export function resolveHostConfigDir(e2eRoot: string): string {
+  const fromRpc = getHostDataDir()?.config?.trim();
+  if (fromRpc) return resolve(fromRpc);
   const fromEnv = process.env.CONFIG_DIR?.trim();
   if (fromEnv) return resolve(fromEnv);
   const hostConfig = join(resolveClientStorageRoot(), "config");

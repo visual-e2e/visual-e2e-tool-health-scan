@@ -42,6 +42,7 @@ import {
   updateReport,
 } from "./report/report-store.js";
 import { migrateLegacyConfigIfNeeded, resolveSessionArtifactsDir } from "./storage/paths.js";
+import { bootstrapHostPaths } from "./host-paths.js";
 import type {
   CreateProfilePayload,
   PersistedScanConfig,
@@ -78,6 +79,25 @@ app.get("/api/info", async () => ({
 }));
 
 app.get("/api/browser/status", async () => getBrowserStatus());
+
+app.post<{
+  Body: {
+    hostRuntime?: { browser_path?: string; ffmpeg_path?: string };
+    hostDataDir?: {
+      storage?: string;
+      projects?: string;
+      config?: string;
+      e2e_root?: string;
+      tools?: string;
+    };
+  };
+}>("/api/host/bootstrap", async (req) => {
+  bootstrapHostPaths({
+    hostRuntime: req.body?.hostRuntime,
+    hostDataDir: req.body?.hostDataDir,
+  });
+  return { ok: true };
+});
 
 app.get("/api/projects", async () => ({ projects: listProjects() }));
 
@@ -286,7 +306,18 @@ app.get<{ Params: { projectId: string } }>(
 );
 
 app.post<{
-  Body: Partial<ScanOptions> & { startUrl?: string; profileId?: string };
+  Body: Partial<ScanOptions> & {
+    startUrl?: string;
+    profileId?: string;
+    hostRuntime?: { browser_path?: string; ffmpeg_path?: string };
+    hostDataDir?: {
+      storage?: string;
+      projects?: string;
+      config?: string;
+      e2e_root?: string;
+      tools?: string;
+    };
+  };
 }>("/api/scans", async (req, reply) => {
   const profileId = req.body?.profileId?.trim();
   const startUrl = req.body?.startUrl?.trim();
@@ -294,7 +325,11 @@ app.post<{
     return reply.status(400).send({ error: "profileId 或 startUrl 不能为空" });
   }
   try {
-    return await createScan(profileId ? { profileId } : { ...req.body, startUrl: startUrl! });
+    return await createScan({
+      ...(profileId ? { profileId } : { ...req.body, startUrl: startUrl! }),
+      hostRuntime: req.body?.hostRuntime,
+      hostDataDir: req.body?.hostDataDir,
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : "创建扫描失败";
     return reply.status(400).send({ error: message });

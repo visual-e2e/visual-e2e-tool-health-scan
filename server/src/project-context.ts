@@ -1,6 +1,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { DEFAULT_SCAN_OPTIONS, type LoginDefaults } from "./types.js";
+import { getHostDataDir } from "./host-paths.js";
 import { resolveE2eRoot } from "./paths.js";
 import { resolveClientStorageRoot } from "./storage/paths.js";
 
@@ -19,9 +20,10 @@ export interface ProjectToolContext {
 }
 
 function projectsDir(e2eRoot: string): string {
+  const fromRpc = getHostDataDir()?.projects?.trim();
+  if (fromRpc) return resolve(fromRpc);
   const fromEnv = process.env.PROJECTS_DIR?.trim();
   if (fromEnv) return resolve(fromEnv);
-  // Client Host stores projects under Storage/projects
   const clientProjects = join(resolveClientStorageRoot(), "projects");
   if (existsSync(clientProjects)) return clientProjects;
   return join(e2eRoot, "projects");

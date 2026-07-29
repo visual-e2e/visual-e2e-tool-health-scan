@@ -7,6 +7,7 @@ import {
   type ProjectListItem,
 } from "@visual-e2e/rpc-sdk";
 import { TOOL_MSG, type HostProjectContext } from "../types";
+import { bootstrapHostOnServer } from "../lib/host-runtime";
 
 export type { ProjectListItem };
 
@@ -44,6 +45,7 @@ export function useHostContext() {
           (settings as { defaultProject?: string } | null)?.defaultProject?.trim() ||
           list[0]?.id;
         await apply(ctx, list, defaultId);
+        await bootstrapHostOnServer().catch(() => undefined);
       } catch {
         requestLegacyContext();
       }

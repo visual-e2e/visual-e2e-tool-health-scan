@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Browser, BrowserContext, Page } from "playwright";
+import type { HostDataDirInput, HostRuntimeInput } from "../host-paths.js";
 import {
   IssueCategory,
   IssueSeverity,
@@ -38,6 +39,8 @@ export interface ActiveScan {
   pauseRequested: boolean;
   collecting: boolean;
   profileId?: string;
+  hostRuntime?: HostRuntimeInput;
+  hostDataDir?: HostDataDirInput;
   runPromise?: Promise<void>;
 }
 

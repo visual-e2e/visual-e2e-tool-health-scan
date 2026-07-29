@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { chromium } from "playwright";
+import { bootstrapHostPaths } from "../host-paths.js";
 import { resolveBrowserLaunch } from "../resolve-browser.js";
 import { attemptAutoLogin } from "../auth/auto-login.js";
 import { saveReportFromSession } from "../report/report-store.js";
@@ -214,9 +214,18 @@ async function runScan(session: ActiveScan): Promise<void> {
     session.progress = "启动浏览器…";
     touch(session);
 
-    const launch = await resolveBrowserLaunch();
+    bootstrapHostPaths({
+      hostRuntime: session.hostRuntime,
+      hostDataDir: session.hostDataDir,
+    });
+
+    const launch = await resolveBrowserLaunch(session.hostRuntime);
     if (!launch.ok) {
       throw new Error(launch.hints.join("; ") || "浏览器未就绪");
+    }
+
+    if (session.options.enableRecording && !launch.env.PLAYWRIGHT_BROWSERS_PATH?.trim()) {
+      throw new Error("录屏需要 ffmpeg，请先在主应用安装浏览器运行时");
     }
 
     // Playwright resolves ffmpeg via process.env.PLAYWRIGHT_BROWSERS_PATH
@@ -224,6 +233,8 @@ async function runScan(session: ActiveScan): Promise<void> {
     for (const [key, value] of Object.entries(launch.env)) {
       process.env[key] = value;
     }
+
+    const { chromium } = await import("playwright");
 
     const browser = await chromium.launch({
       headless: launch.settings.headless,
@@ -421,7 +432,12 @@ async function runScan(session: ActiveScan): Promise<void> {
 }
 
 export async function createScan(
-  input: Partial<ScanOptions> & { startUrl?: string; profileId?: string },
+  input: Partial<ScanOptions> & {
+    startUrl?: string;
+    profileId?: string;
+    hostRuntime?: ActiveScan["hostRuntime"];
+    hostDataDir?: ActiveScan["hostDataDir"];
+  },
 ): Promise<ReturnType<typeof toView>> {
   let resolvedInput = input;
   if (input.profileId) {
@@ -455,6 +471,8 @@ export async function createScan(
     pauseRequested: false,
     collecting: false,
     profileId: input.profileId,
+    hostRuntime: input.hostRuntime,
+    hostDataDir: input.hostDataDir,
   };
   sessions.set(id, session);
   session.runPromise = runScan(session);

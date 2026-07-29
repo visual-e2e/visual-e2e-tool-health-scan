@@ -12,6 +12,7 @@ import { useBrowserStatus } from "../hooks/useBrowserStatus";
 import { navigateToList } from "../hooks/useHashRoute";
 import { useScanSession } from "../hooks/useScanSession";
 import { api } from "../api/client";
+import { fetchLoginDefaults } from "../lib/host-runtime";
 import { downloadJson } from "../utils/download";
 import {
   ClickSuccessMode,
@@ -179,7 +180,7 @@ export function ProfileDetailPage({ profileId }: ProfileDetailPageProps) {
       const pid = meta.projectId;
       if (pid) {
         try {
-          const defaults = await api.loginDefaults(pid);
+          const defaults = await fetchLoginDefaults(pid);
           const needLogin =
             !config.loginProfile?.username?.trim() || !config.loginProfile?.password?.trim();
           mergedConfig = {
@@ -238,7 +239,7 @@ export function ProfileDetailPage({ profileId }: ProfileDetailPageProps) {
     if (!pid) return;
     if (loginProfile?.username?.trim() && loginProfile?.password?.trim()) return;
     try {
-      const defaults = await api.loginDefaults(pid);
+      const defaults = await fetchLoginDefaults(pid);
       if (!defaults.loginProfile?.username && !defaults.loginProfile?.password) return;
       setLoginProfile((prev) => ({
         ...defaults.loginProfile,

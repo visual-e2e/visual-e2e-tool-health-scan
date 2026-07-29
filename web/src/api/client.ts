@@ -2,7 +2,10 @@ import type {
   BlacklistRuleFile,
   ClickRuleConfig,
   CreateProfilePayload,
+  CreateScanPayload,
+  HostDataDirPaths,
   HostProjectContext,
+  HostRuntimePaths,
   IgnoreRequestRule,
   LoginDefaults,
   LoginProfile,
@@ -51,6 +54,14 @@ type RulesBundle = {
 
 export const api = {
   health: () => request<{ ok: boolean; toolId: string }>("/api/health"),
+  bootstrapHost: (body: {
+    hostRuntime?: HostRuntimePaths;
+    hostDataDir?: HostDataDirPaths;
+  }) =>
+    request<{ ok: boolean }>("/api/host/bootstrap", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
   browserStatus: () =>
     request<{ ok: boolean; path: string; version: string; hints: string[] }>("/api/browser/status"),
   projects: () => request<{ projects: ProjectMeta[] }>("/api/projects"),
@@ -78,7 +89,7 @@ export const api = {
       body: JSON.stringify(body),
     }),
 
-  createScan: (body: { profileId: string } | (Partial<ScanOptions> & { startUrl: string })) =>
+  createScan: (body: CreateScanPayload | (Partial<ScanOptions> & { startUrl: string })) =>
     request<ScanSession>("/api/scans", { method: "POST", body: JSON.stringify(body) }),
   getScan: (sessionId: string) => request<ScanSession>(`/api/scans/${sessionId}`),
   startScan: (sessionId: string) => postScanAction(sessionId, "start"),
