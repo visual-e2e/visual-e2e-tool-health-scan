@@ -2,7 +2,6 @@ import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { getHostDataDir } from "./host-paths.js";
-import { resolveClientStorageRoot } from "./storage/paths.js";
 
 export const Runtime = {
   Client: "client",
@@ -30,8 +29,11 @@ export function resolveHostConfigDir(e2eRoot: string): string {
   if (fromRpc) return resolve(fromRpc);
   const fromEnv = process.env.CONFIG_DIR?.trim();
   if (fromEnv) return resolve(fromEnv);
-  const hostConfig = join(resolveClientStorageRoot(), "config");
-  if (existsSync(hostConfig)) return hostConfig;
+  const storage = getHostDataDir()?.storage?.trim();
+  if (storage) {
+    const hostConfig = join(storage, "config");
+    if (existsSync(hostConfig)) return hostConfig;
+  }
   return join(e2eRoot, "config");
 }
 

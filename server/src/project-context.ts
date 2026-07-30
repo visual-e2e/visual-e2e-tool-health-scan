@@ -3,7 +3,6 @@ import { join, resolve } from "node:path";
 import { DEFAULT_SCAN_OPTIONS, type LoginDefaults } from "./types.js";
 import { getHostDataDir } from "./host-paths.js";
 import { resolveE2eRoot } from "./paths.js";
-import { resolveClientStorageRoot } from "./storage/paths.js";
 
 export interface ProjectMeta {
   id: string;
@@ -24,8 +23,11 @@ function projectsDir(e2eRoot: string): string {
   if (fromRpc) return resolve(fromRpc);
   const fromEnv = process.env.PROJECTS_DIR?.trim();
   if (fromEnv) return resolve(fromEnv);
-  const clientProjects = join(resolveClientStorageRoot(), "projects");
-  if (existsSync(clientProjects)) return clientProjects;
+  const storage = getHostDataDir()?.storage?.trim();
+  if (storage) {
+    const clientProjects = join(storage, "projects");
+    if (existsSync(clientProjects)) return clientProjects;
+  }
   return join(e2eRoot, "projects");
 }
 

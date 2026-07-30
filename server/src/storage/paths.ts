@@ -1,20 +1,12 @@
 import { cp, mkdir, readdir } from "node:fs/promises";
 import { existsSync, readdirSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
-import { homedir } from "node:os";
 import { getHostDataDir } from "../host-paths.js";
 
-function legacyClientStorageRoot(): string {
-  if (process.platform === "darwin") {
-    return join(homedir(), "Library", "Application Support", "visual-e2e-test", "Storage");
-  }
-  if (process.platform === "win32") {
-    const appdata = process.env.APPDATA;
-    if (appdata) return join(appdata, "visual-e2e-test", "Storage");
-  }
-  return join(homedir(), ".local", "share", "visual-e2e-test", "Storage");
-}
-
+/**
+ * Storage 根目录：优先 Host RPC `getDataDir().storage`（经 /api/host/bootstrap 注入）。
+ * 独立开发时可由 Host/CLI 注入 CONFIG_DIR（其父级为 Storage）。
+ */
 export function resolveClientStorageRoot(): string {
   const fromRpc = getHostDataDir()?.storage?.trim();
   if (fromRpc) return fromRpc;
@@ -25,7 +17,7 @@ export function resolveClientStorageRoot(): string {
     if (basename(parent) === "Storage") return parent;
   }
 
-  return legacyClientStorageRoot();
+  throw new Error("Storage 路径未注入：请在 Host 内打开工具以 bootstrap getDataDir()");
 }
 
 export function resolveToolId(): string {
@@ -134,7 +126,13 @@ export function resolveProfileConfigDir(profileId: string, toolId = resolveToolI
 }
 
 export async function migrateLegacyConfigIfNeeded(toolId = resolveToolId()): Promise<void> {
-  const legacyDir = join(resolveClientStorageRoot(), "config");
+  let storageRoot: string;
+  try {
+    storageRoot = resolveClientStorageRoot();
+  } catch {
+    return;
+  }
+  const legacyDir = join(storageRoot, "config");
   const targetDir = resolveToolConfigDir(toolId);
   if (!existsSync(legacyDir) || existsSync(join(targetDir, "blacklist.json"))) {
     return;
