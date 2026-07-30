@@ -69,6 +69,53 @@ export const REGISTRY_STATUS_COLOR: Record<RegistryStatus, string> = {
   [Reg.Skipped]: "warning",
 };
 
+/** 活跃队列：待执行 / 延后 / 已执行 */
+export const REGISTRY_ACTIVE_STATUSES = new Set<RegistryStatus>([
+  Reg.Pending,
+  Reg.Deferred,
+  Reg.Executed,
+]);
+
+/** 归档：跳过 / 失效 */
+export const REGISTRY_ARCHIVE_STATUSES = new Set<RegistryStatus>([
+  Reg.Skipped,
+  Reg.Stale,
+]);
+
+const REGISTRY_LAST_RESULT_LABEL: Record<string, string> = {
+  pending: "待执行",
+  deferred: "延后",
+  executed: "已执行",
+  stale: "DOM 已消失",
+  skipped: "已跳过",
+  success: "成功",
+  failed: "失败",
+  "semantic-dedup": "语义重复",
+  "page-budget": "单页预算",
+  blacklist: "黑名单",
+};
+
+export function formatRegistryLastResult(value?: string): string {
+  if (!value) return "—";
+  return REGISTRY_LAST_RESULT_LABEL[value] ?? value;
+}
+
+export function compareRegistryItems(
+  a: { status: RegistryStatus; layer: number; lastUpdatedAt: string },
+  b: { status: RegistryStatus; layer: number; lastUpdatedAt: string },
+): number {
+  const rank: Record<RegistryStatus, number> = {
+    [Reg.Pending]: 0,
+    [Reg.Deferred]: 1,
+    [Reg.Executed]: 2,
+    [Reg.Skipped]: 3,
+    [Reg.Stale]: 4,
+  };
+  if (rank[a.status] !== rank[b.status]) return rank[a.status] - rank[b.status];
+  if (b.layer !== a.layer) return b.layer - a.layer;
+  return b.lastUpdatedAt.localeCompare(a.lastUpdatedAt);
+}
+
 export const CLICK_OUTCOME_COLOR: Record<ClickOutcome, string> = {
   [ClickOutcome.Success]: "success",
   [ClickOutcome.Skipped]: "default",

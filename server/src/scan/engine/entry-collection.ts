@@ -7,8 +7,9 @@ import {
 } from "../../types.js";
 import { collectEventEntries } from "./event-collector.js";
 import { collectProbeEntries } from "./probe-collector.js";
+import { markNavigationEntries } from "./nav-utils.js";
 
-/** 事件采集优先；probe 仅补全未覆盖的 targetId。 */
+/** 事件采集优先；probe 仅补全未覆盖的 targetId。导航标记取 OR。 */
 export function mergeEventEntries(
   events: EventEntryDraft[],
   probes: EventEntryDraft[],
@@ -18,8 +19,13 @@ export function mergeEventEntries(
     merged.set(entry.targetId, entry);
   }
   for (const entry of probes) {
-    if (!merged.has(entry.targetId)) {
+    const existing = merged.get(entry.targetId);
+    if (!existing) {
       merged.set(entry.targetId, entry);
+      continue;
+    }
+    if (entry.isNavigation) {
+      existing.isNavigation = true;
     }
   }
   return [...merged.values()];
@@ -33,7 +39,8 @@ export async function collectAllEventEntries(
   const resolved = resolveProbeSelectors(probeConfig);
   const [events, probes] = await Promise.all([
     collectEventEntries(page, framework).catch(() => []),
-    collectProbeEntries(page, resolved.clickable).catch(() => []),
+    collectProbeEntries(page, resolved.clickable, resolved.nav).catch(() => []),
   ]);
-  return mergeEventEntries(events, probes);
+  const merged = mergeEventEntries(events, probes);
+  return markNavigationEntries(page, merged, resolved.nav);
 }

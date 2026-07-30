@@ -9,12 +9,15 @@ import {
 } from "../../types.js";
 import { detectOverlayStack, type OverlayInfo } from "../probes/click/overlay.js";
 import { isSchedulableEntry } from "./registry-scorer.js";
+import { isNavigationEntry } from "./nav-utils.js";
 
 export type EntryScopeType = "overlay" | "page";
 
 export interface ScheduleContext {
   clickPolicy: ClickPolicy;
   defaultWeight: number;
+  /** 单页点击已达上限时，仅调度导航类 */
+  navOnly?: boolean;
 }
 
 export interface PickContext {
@@ -101,6 +104,7 @@ export function pickNextByScope(
     if (e.status === RegistryStatus.Deferred) return false;
     if (!isSchedulableEntry(e, schedule)) return false;
     if (applySemanticDedup && globalExecuted.has(e.semanticId)) return false;
+    if (schedule.navOnly && !isNavigationEntry(e)) return false;
     return e.status === RegistryStatus.Pending;
   });
 

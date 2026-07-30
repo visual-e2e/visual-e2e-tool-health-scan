@@ -148,6 +148,23 @@ body,
   overflow: auto;
 }
 
+.registry-collapse.ant-collapse {
+  background: transparent;
+}
+
+.registry-collapse > .ant-collapse-item {
+  border: 1px solid #f0f0f0;
+  border-radius: 6px !important;
+  margin-bottom: 8px;
+  overflow: hidden;
+}
+
+.registry-collapse > .ant-collapse-item > .ant-collapse-header {
+  padding: 8px 12px !important;
+  background: #fafafa;
+  font-weight: 600;
+}
+
 .list-table-card {
   flex: 1;
   min-height: 0;

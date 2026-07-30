@@ -27,6 +27,7 @@ import { sleep } from "../utils/sleep.js";
 import { collectAllEventEntries } from "./entry-collection.js";
 import { EventTable } from "./event-table.js";
 import { applyRegistryScoring } from "./registry-scorer.js";
+import { isNavigationEntry } from "./nav-utils.js";
 import {
   classifyMutation,
   drainDomMutations,
@@ -47,6 +48,7 @@ import { getTopOverlay, type PickContext } from "./scope-resolver.js";
 
 export interface ScanLoopOptions {
   maxClicks: number;
+  maxClicksPerPage: number;
   framework: Framework;
   clickDelayMs: number;
   postClickSettleMs: number;
@@ -263,9 +265,12 @@ export async function runScanLoop(
   markPhase(session, PhaseName.Click, false);
 
   const table = new EventTable(opts.listSampleSize);
-  const globalExecuted = new Set<string>(); // smart_dedup 模式下的语义去重
-  const dedupEnabled = opts.executionMode === "smart_dedup";
+  /** 同一语义操作只点一次（无论 executionMode） */
+  const globalExecuted = new Set<string>();
+  const dedupEnabled = true;
   let roundsWithoutProgress = 0;
+  let pageClickCount = 0;
+  let pageKey = pageUrlKey(page.url());
 
   // 注入 DOM 观察者
   await injectDomObserver(page).catch(() => undefined);
@@ -289,10 +294,21 @@ export async function runScanLoop(
     schedule: {
       clickPolicy: session.options.clickPolicy,
       defaultWeight: session.options.defaultWeight,
+      navOnly: false,
     },
   };
 
+  function syncPageBudget(): void {
+    const key = pageUrlKey(page.url());
+    if (key !== pageKey) {
+      pageKey = key;
+      pageClickCount = 0;
+    }
+    pickCtx.schedule.navOnly = pageClickCount >= opts.maxClicksPerPage;
+  }
+
   async function syncScopeAndPick(): Promise<EventEntry | undefined> {
+    syncPageBudget();
     let topOverlay = await getTopOverlay(page, resolvedProbe);
     const scopeChanged = table.reconcileScope(topOverlay);
     for (const e of scopeChanged) {
@@ -340,9 +356,28 @@ export async function runScanLoop(
 
     // ③ 没有可执行的 → 等待 DOM 变化
     if (!entry) {
-      if (dedupEnabled) {
+      // 语义去重：把已执行过同 semanticId 的 pending 标为 skipped
+      for (const e of table.pendingEntries()) {
+        if (!globalExecuted.has(e.semanticId)) continue;
+        table.markExecuted(e.targetId);
+        upsertInteractionRegistry(session, {
+          id: e.targetId,
+          label: e.text || e.tagName,
+          selector: e.selector,
+          eventType: e.eventTypes[0] ?? "click",
+          layer: e.layer,
+          source: e.sources[0] ?? "unknown",
+          scopeType: e.scopeType,
+          scopeId: e.scopeId,
+          status: RegistryStatus.Skipped,
+          lastResult: "semantic-dedup",
+        });
+      }
+
+      // 单页预算耗尽：非导航 pending 不再执行
+      if (pickCtx.schedule.navOnly) {
         for (const e of table.pendingEntries()) {
-          if (!globalExecuted.has(e.semanticId)) continue;
+          if (isNavigationEntry(e)) continue;
           table.markExecuted(e.targetId);
           upsertInteractionRegistry(session, {
             id: e.targetId,
@@ -354,7 +389,7 @@ export async function runScanLoop(
             scopeType: e.scopeType,
             scopeId: e.scopeId,
             status: RegistryStatus.Skipped,
-            lastResult: "semantic-dedup",
+            lastResult: "page-budget",
           });
         }
       }
@@ -423,12 +458,11 @@ export async function runScanLoop(
       postClickSettleMs: opts.postClickSettleMs,
     });
 
-    // ⑥ 记录结果
-    if (dedupEnabled) {
-      globalExecuted.add(entry.semanticId);
-    }
+    // ⑥ 记录结果：语义去重始终写入，避免同类操作反复点击
+    globalExecuted.add(entry.semanticId);
     table.markExecuted(entry.targetId);
     session.clicksTried += 1;
+    pageClickCount += 1;
     entry.status = RegistryStatus.Executed;
     upsertRegistryFromEntry(session, entry, result.outcome);
 
@@ -463,6 +497,7 @@ export async function runScanLoop(
     await page.waitForTimeout(opts.clickDelayMs);
     await closeExtraTabs(session, page);
     await ensureSameOrigin(session, page);
+    syncPageBudget();
 
     const mutations = await drainDomMutations(page);
     const level = classifyMutation(mutations);
@@ -548,6 +583,14 @@ async function refreshEventTable(
 function logInfo(session: ActiveScan, msg: string): void {
   session.progress = msg;
   touch(session);
-  // fire-and-forget console log with timestamp
   console.log(`${nowIso()} ${msg}`);
+}
+
+function pageUrlKey(url: string): string {
+  try {
+    const u = new URL(url);
+    return `${u.origin}${u.pathname}${u.search}`;
+  } catch {
+    return url;
+  }
 }

@@ -39,6 +39,8 @@ export interface EventEntry {
   score?: number;
   matchedRules?: MatchedRuleInfo[];
   matchContext?: RuleMatchContext;
+  /** 是否匹配 probe-selectors 中 category=nav 的规则 */
+  isNavigation?: boolean;
 }
 
 export type EventEntryDraft = Omit<EventEntry, "layer" | "status">;

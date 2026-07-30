@@ -101,26 +101,90 @@ function renderReportHtml(report: Awaited<ReturnType<typeof getReport>>): string
   const badge = (text: string, bg: string, fg = "#fff") =>
     `<span style="display:inline-block;padding:2px 8px;border-radius:9999px;font-size:12px;font-weight:600;background:${bg};color:${fg}">${escapeHtml(text)}</span>`;
 
-  const issuesRows = (s.issues ?? [])
-    .map(
-      (i) => `<tr>
-        <td>${badge(categoryLabel[i.category] ?? i.category, categoryColor[i.category] ?? "#6b7280")}</td>
-        <td>${badge(i.severity === "error" ? "错误" : "警告", severityColor[i.severity] ?? "#6b7280")}</td>
-        <td>${escapeHtml(i.title)}</td>
-        <td style="font-size:12px;color:#6b7280">${escapeHtml(i.pageUrl || "")}</td>
-        <td><pre style="font-size:12px">${escapeHtml(i.detail || "")}</pre></td>
-      </tr>`,
-    )
-    .join("");
-  const actionsRows = (s.clickActions ?? [])
-    .map(
-      (a) => `<tr>
-        <td>${badge(outcomeLabel[a.outcome] ?? a.outcome, outcomeColor[a.outcome] ?? "#6b7280")}</td>
-        <td>${escapeHtml(a.target?.label || "")}</td>
-        <td style="color:#dc2626;font-size:12px">${escapeHtml(a.error || "")}</td>
-      </tr>`,
-    )
-    .join("");
+  function groupByPageUrl<T extends { pageUrl?: string }>(items: T[]): Array<{ pageUrl: string; items: T[] }> {
+    const map = new Map<string, T[]>();
+    for (const item of items) {
+      const key = item.pageUrl?.trim() || "(未知页面)";
+      const list = map.get(key);
+      if (list) list.push(item);
+      else map.set(key, [item]);
+    }
+    return [...map.entries()].map(([pageUrl, groupItems]) => ({ pageUrl, items: groupItems }));
+  }
+
+  function shortPageLabel(pageUrl: string): string {
+    if (pageUrl === "(未知页面)") return pageUrl;
+    try {
+      const u = new URL(pageUrl);
+      return `${u.pathname}${u.search}` || pageUrl;
+    } catch {
+      return pageUrl;
+    }
+  }
+
+  function renderAccordion(
+    groups: Array<{ pageUrl: string; summary: string; body: string }>,
+  ): string {
+    if (groups.length === 0) {
+      return `<div style="text-align:center;color:#9ca3af;padding:20px">暂无数据</div>`;
+    }
+    return groups
+      .map(
+        (g, idx) => `<details class="acc" ${idx === 0 ? "open" : ""}>
+          <summary>
+            <span class="acc-title">${escapeHtml(shortPageLabel(g.pageUrl))}</span>
+            <span class="acc-meta">${escapeHtml(g.summary)}</span>
+          </summary>
+          <div class="acc-body">${g.body}</div>
+        </details>`,
+      )
+      .join("");
+  }
+
+  const issueGroups = groupByPageUrl(s.issues ?? []).map((g) => {
+    const rows = g.items
+      .map(
+        (i) => `<tr>
+          <td>${badge(categoryLabel[i.category] ?? i.category, categoryColor[i.category] ?? "#6b7280")}</td>
+          <td>${badge(i.severity === "error" ? "错误" : "警告", severityColor[i.severity] ?? "#6b7280")}</td>
+          <td>${escapeHtml(i.title)}</td>
+          <td><pre style="font-size:12px">${escapeHtml(i.detail || "")}</pre></td>
+        </tr>`,
+      )
+      .join("");
+    return {
+      pageUrl: g.pageUrl,
+      summary: `${g.items.length} 条`,
+      body: `<table>
+        <thead><tr><th>类别</th><th>级别</th><th>标题</th><th>详情</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`,
+    };
+  });
+
+  const actionGroups = groupByPageUrl(s.clickActions ?? []).map((g) => {
+    const ok = g.items.filter((a) => a.outcome === "success").length;
+    const fail = g.items.filter((a) => a.outcome === "failed").length;
+    const skip = g.items.filter((a) => a.outcome === "skipped").length;
+    const rows = g.items
+      .map(
+        (a) => `<tr>
+          <td>${badge(outcomeLabel[a.outcome] ?? a.outcome, outcomeColor[a.outcome] ?? "#6b7280")}</td>
+          <td>${escapeHtml(a.target?.label || "")}</td>
+          <td style="color:#dc2626;font-size:12px">${escapeHtml(a.error || "")}</td>
+        </tr>`,
+      )
+      .join("");
+    return {
+      pageUrl: g.pageUrl,
+      summary: `${g.items.length} 次 · 成功 ${ok} · 失败 ${fail} · 跳过 ${skip}`,
+      body: `<table>
+        <thead><tr><th>结果</th><th>目标</th><th>错误</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`,
+    };
+  });
+
   const logPath = join(report.artifactsDir, "logs", "run.log");
   const logs = existsSync(logPath) ? readFileSync(logPath, "utf-8") : "";
   const videoHref = toAssetHref(report.sessionId, report.videoPath, report.artifactsDir);
@@ -171,6 +235,14 @@ function renderReportHtml(report: Awaited<ReturnType<typeof getReport>>): string
     pre { white-space:pre-wrap; word-break:break-word; margin:0; font-size:12px; line-height:1.6; }
     video { width:100%; max-width:960px; border-radius:8px; background:#000; display:block; }
     .log-pre { background:#0d1117; color:#e6edf3; border-radius:8px; padding:16px; font-size:12px; line-height:1.7; overflow-x:auto; }
+    .acc { border:1px solid #e5e7eb; border-radius:8px; margin-bottom:8px; overflow:hidden; background:#fff; }
+    .acc summary { list-style:none; cursor:pointer; display:flex; align-items:center; gap:12px; padding:10px 12px; background:#f9fafb; user-select:none; }
+    .acc summary::-webkit-details-marker { display:none; }
+    .acc summary::before { content:"▸"; color:#6b7280; font-size:12px; width:12px; flex:none; }
+    .acc[open] summary::before { content:"▾"; }
+    .acc-title { flex:1; min-width:0; font-size:13px; font-weight:600; color:#111827; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .acc-meta { flex:none; font-size:12px; color:#6b7280; }
+    .acc-body { padding:0 4px 4px; border-top:1px solid #f3f4f6; }
     @media(max-width:700px) { .stat-grid { grid-template-columns:repeat(2,1fr); } }
   </style>
 </head>
@@ -198,18 +270,12 @@ function renderReportHtml(report: Awaited<ReturnType<typeof getReport>>): string
 
     <div class="card">
       <h2>🐛 问题列表</h2>
-      <table>
-        <thead><tr><th>类别</th><th>级别</th><th>标题</th><th>页面</th><th>详情</th></tr></thead>
-        <tbody>${issuesRows || `<tr><td colspan="5" style="text-align:center;color:#9ca3af;padding:20px">无问题</td></tr>`}</tbody>
-      </table>
+      ${renderAccordion(issueGroups)}
     </div>
 
     <div class="card">
       <h2>🖱 点击日志</h2>
-      <table>
-        <thead><tr><th>结果</th><th>目标</th><th>错误</th></tr></thead>
-        <tbody>${actionsRows || `<tr><td colspan="3" style="text-align:center;color:#9ca3af;padding:20px">无点击日志</td></tr>`}</tbody>
-      </table>
+      ${renderAccordion(actionGroups)}
     </div>
 
     <div class="card">

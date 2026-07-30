@@ -10,6 +10,7 @@ interface RawProbeEntry {
   text: string;
   rect: { top: number; left: number; width: number; height: number };
   listGroupKey?: string;
+  isNavigation: boolean;
   matchContext: {
     searchText: string;
     attributes: Record<string, string>;
@@ -19,16 +20,22 @@ interface RawProbeEntry {
 }
 
 /**
- * 按 probe-selectors 的 clickable 列表补采 DOM 候选（如 thy-nav-item / thy-menu-item）。
+ * 按 probe-selectors 的 clickable 列表补采 DOM 候选。
+ * navSelectors 来自 category=nav，用于标记 isNavigation。
  */
 export async function collectProbeEntries(
   page: Page,
   clickableSelectors: string[],
+  navSelectors: string[] = [],
 ): Promise<EventEntryDraft[]> {
   if (clickableSelectors.length === 0) return [];
 
   const raw = await page.evaluate(
-    (payload: { shim: string; selectors: string[] }): RawProbeEntry[] => {
+    (payload: {
+      shim: string;
+      selectors: string[];
+      navSelectors: string[];
+    }): RawProbeEntry[] => {
       eval(payload.shim);
 
       const truncate = (s: string, n: number) => s.slice(0, n);
@@ -121,9 +128,18 @@ export async function collectProbeEntries(
         if (aria) return truncate(aria, 40);
         const title = html.getAttribute("title");
         if (title) return truncate(title, 40);
-        const thyicon = html.getAttribute("thyicon");
-        if (thyicon) return thyicon;
         return "[无文本]";
+      }
+
+      function matchesAny(el: Element, sels: string[]): boolean {
+        for (const sel of sels) {
+          try {
+            if (el.matches(sel)) return true;
+          } catch {
+            // skip
+          }
+        }
+        return false;
       }
 
       const seenElements = new Set<Element>();
@@ -140,18 +156,9 @@ export async function collectProbeEntries(
         for (const el of nodes) {
           if (seenElements.has(el)) continue;
           seenElements.add(el);
-
-          const tagName = el.tagName.toLowerCase();
-          if (
-            tagName === "thy-menu" ||
-            tagName === "thy-nav" ||
-            (tagName.endsWith("-menu") && !tagName.includes("-item")) ||
-            (tagName.endsWith("-nav") && !tagName.includes("-item"))
-          ) {
-            continue;
-          }
           if (!isVisible(el)) continue;
 
+          const tagName = el.tagName.toLowerCase();
           const rect = el.getBoundingClientRect();
           const rectPlain = {
             top: Math.round(rect.top),
@@ -174,6 +181,7 @@ export async function collectProbeEntries(
             text,
             rect: rectPlain,
             listGroupKey: buildListGroupKey(el),
+            isNavigation: matchesAny(el, payload.navSelectors),
             matchContext: {
               searchText: [text, selectorSelf, ...collectParentChain(el)].join(" "),
               attributes,
@@ -186,7 +194,11 @@ export async function collectProbeEntries(
 
       return results;
     },
-    { shim: BROWSER_EVAL_SHIM, selectors: clickableSelectors },
+    {
+      shim: BROWSER_EVAL_SHIM,
+      selectors: clickableSelectors,
+      navSelectors,
+    },
   );
 
   return raw.map((entry) => ({

@@ -41,7 +41,9 @@ export const DEFAULT_SCAN_OPTIONS: Omit<ScanOptions, "startUrl"> = {
   enableRouteScreenshot: false,
   clickSuccessMode: ClickSuccessMode.DomChange,
   probeSelectors: getDefaultProbeSelectors(),
-  executionMode: "strict_registry",
+  executionMode: "smart_dedup",
+  listSampleSize: 5,
+  maxClicksPerPage: 50,
   maxRetryPerItem: 2,
   maxRoundsWithoutProgress: 3,
 };

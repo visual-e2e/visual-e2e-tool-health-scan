@@ -107,11 +107,45 @@ async function waitWhilePaused(session: ActiveScan): Promise<boolean> {
 }
 
 async function cleanupBrowser(session: ActiveScan): Promise<void> {
+  const page = session.page;
+  const context = session.context;
   const browser = session.browser;
   session.page = null;
   session.context = null;
   session.browser = null;
+  if (page && !page.isClosed()) await page.close().catch(() => undefined);
+  if (context) await context.close().catch(() => undefined);
   if (browser) await browser.close().catch(() => undefined);
+}
+
+/**
+ * 先关闭 page/context 落盘 webm，再返回视频路径；browser 留给后续 cleanup。
+ */
+async function finalizeScanVideo(session: ActiveScan): Promise<string | undefined> {
+  if (!session.options.enableRecording) return undefined;
+  const page = session.page;
+  const context = session.context;
+  if (!page && !context) return session.videoPath;
+
+  const video = page?.video() ?? null;
+  if (page && !page.isClosed()) {
+    await page.close().catch(() => undefined);
+  }
+  session.page = null;
+
+  if (context) {
+    await context.close().catch(() => undefined);
+  }
+  session.context = null;
+
+  if (!video) return session.videoPath;
+  try {
+    const videoPath = await video.path();
+    session.videoPath = videoPath;
+    return videoPath;
+  } catch {
+    return session.videoPath;
+  }
 }
 
 function buildPhases(options: ScanOptions): ScanPhase[] {
@@ -244,6 +278,10 @@ export function normalizeOptions(input: Partial<ScanOptions> & { startUrl: strin
     listSampleSize: Math.max(
       1,
       Math.min(20, Number(input.listSampleSize ?? DEFAULT_SCAN_OPTIONS.listSampleSize)),
+    ),
+    maxClicksPerPage: Math.max(
+      1,
+      Math.min(500, Number(input.maxClicksPerPage ?? DEFAULT_SCAN_OPTIONS.maxClicksPerPage)),
     ),
     domChangeTimeoutMs: Math.max(
       500,
@@ -435,14 +473,15 @@ async function runScan(session: ActiveScan): Promise<void> {
         // 新引擎：事件表驱动，统一处理导航/hover/点击
         await runScanLoop(session, page, {
           maxClicks: session.options.maxClicks,
+          maxClicksPerPage: session.options.maxClicksPerPage ?? 50,
           framework: session.options.framework ?? "auto",
           clickDelayMs: session.options.clickDelayMs,
           postClickSettleMs: session.options.postClickSettleMs,
-          listSampleSize: session.options.listSampleSize ?? 2,
+          listSampleSize: session.options.listSampleSize ?? 5,
           domChangeTimeoutMs: session.options.domChangeTimeoutMs ?? 3000,
           enableFailureScreenshot: session.options.enableFailureScreenshot !== false,
           useFingerprint: session.options.clickSuccessMode !== "action_ok",
-          executionMode: session.options.executionMode ?? "strict_registry",
+          executionMode: session.options.executionMode ?? "smart_dedup",
           maxRoundsWithoutProgress: session.options.maxRoundsWithoutProgress ?? 3,
         });
       } else {
@@ -471,17 +510,8 @@ async function runScan(session: ActiveScan): Promise<void> {
     session.progress = undefined;
     await logLine(session, `[error] ${session.error}`);
   } finally {
-    if (session.page && session.context && session.options.enableRecording) {
-      const video = session.page.video();
-      if (video) {
-        try {
-          const videoPath = await video.path();
-          session.videoPath = videoPath;
-        } catch {
-          // video may not be ready yet
-        }
-      }
-    }
+    // 必须先关闭 page/context 才能落盘录屏，再保存报告拷贝视频
+    await finalizeScanVideo(session).catch(() => undefined);
     touch(session);
 
     if (

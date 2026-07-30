@@ -1,11 +1,15 @@
-import { Alert, Card, Space, Table, Tabs, Tag, Typography } from "antd";
+import { Alert, Card, Collapse, Space, Table, Tabs, Tag, Typography } from "antd";
 import { useMemo } from "react";
 import type { ColumnsType } from "antd/es/table";
 import {
   CATEGORY_LABEL,
   CLICK_OUTCOME_COLOR,
+  compareRegistryItems,
   formatClickOutcomeLabel,
+  formatRegistryLastResult,
   LIVE_STATUSES,
+  REGISTRY_ACTIVE_STATUSES,
+  REGISTRY_ARCHIVE_STATUSES,
   REGISTRY_STATUS_COLOR,
   REGISTRY_STATUS_LABEL,
   STATUS_COLOR,
@@ -14,6 +18,7 @@ import {
 import {
   FAILURE_CODE_LABEL,
   IssueSeverity,
+  RegistryStatus,
   ScanStatus,
   formatClickTarget,
   type ClickActionLog,
@@ -36,6 +41,20 @@ const EMPTY_SUMMARY = {
   clicksTried: 0,
   clicksSkipped: 0,
 };
+
+function countByStatus(items: InteractionRegistryItem[]): Record<RegistryStatus, number> {
+  const counts = {
+    [RegistryStatus.Pending]: 0,
+    [RegistryStatus.Deferred]: 0,
+    [RegistryStatus.Executed]: 0,
+    [RegistryStatus.Skipped]: 0,
+    [RegistryStatus.Stale]: 0,
+  };
+  for (const item of items) {
+    counts[item.status] += 1;
+  }
+  return counts;
+}
 
 export function ScanProgressPanel({ session }: ScanProgressPanelProps) {
   const issueColumns: ColumnsType<ScanIssue> = useMemo(
@@ -153,7 +172,7 @@ export function ScanProgressPanel({ session }: ScanProgressPanelProps) {
         title: "结果",
         dataIndex: "lastResult",
         width: 120,
-        render: (v?: string) => v ?? "—",
+        render: (v?: string) => formatRegistryLastResult(v),
       },
     ],
     [],
@@ -164,6 +183,80 @@ export function ScanProgressPanel({ session }: ScanProgressPanelProps) {
   const issues = session?.issues ?? [];
   const clickActions = session?.clickActions ?? [];
   const phases = session?.phases ?? [];
+
+  const registrySplit = useMemo(() => {
+    const active = interactionRegistry
+      .filter((item) => REGISTRY_ACTIVE_STATUSES.has(item.status))
+      .sort(compareRegistryItems);
+    const archive = interactionRegistry
+      .filter((item) => REGISTRY_ARCHIVE_STATUSES.has(item.status))
+      .sort(compareRegistryItems);
+    return {
+      active,
+      archive,
+      counts: countByStatus(interactionRegistry),
+      total: interactionRegistry.length,
+    };
+  }, [interactionRegistry]);
+
+  const registryPanel = (
+    <div className="registry-panel">
+      <Space wrap size={[4, 4]} style={{ marginBottom: 8 }}>
+        <Tag color="processing">待执行 {registrySplit.counts[RegistryStatus.Pending]}</Tag>
+        <Tag color="gold">延后 {registrySplit.counts[RegistryStatus.Deferred]}</Tag>
+        <Tag color="success">已执行 {registrySplit.counts[RegistryStatus.Executed]}</Tag>
+        <Tag color="warning">跳过 {registrySplit.counts[RegistryStatus.Skipped]}</Tag>
+        <Tag>失效 {registrySplit.counts[RegistryStatus.Stale]}</Tag>
+      </Space>
+
+      <Collapse
+        size="small"
+        bordered={false}
+        className="registry-collapse"
+        defaultActiveKey={["active"]}
+        items={[
+          {
+            key: "active",
+            label: `活跃队列 (${registrySplit.active.length})`,
+            children: (
+              <Table
+                size="small"
+                rowKey="id"
+                columns={registryColumns}
+                dataSource={registrySplit.active}
+                pagination={
+                  registrySplit.active.length > 15
+                    ? { pageSize: 15, size: "small" }
+                    : false
+                }
+                scroll={{ x: true }}
+                locale={{ emptyText: "暂无活跃项" }}
+              />
+            ),
+          },
+          {
+            key: "archive",
+            label: `已归档 · 跳过 ${registrySplit.counts[RegistryStatus.Skipped]} · 失效 ${registrySplit.counts[RegistryStatus.Stale]}`,
+            children: (
+              <Table
+                size="small"
+                rowKey="id"
+                columns={registryColumns}
+                dataSource={registrySplit.archive}
+                pagination={
+                  registrySplit.archive.length > 15
+                    ? { pageSize: 15, size: "small" }
+                    : false
+                }
+                scroll={{ x: true }}
+                locale={{ emptyText: "暂无归档项" }}
+              />
+            ),
+          },
+        ]}
+      />
+    </div>
+  );
 
   return (
     <Card
@@ -239,18 +332,8 @@ export function ScanProgressPanel({ session }: ScanProgressPanelProps) {
         items={[
           {
             key: "registry",
-            label: `操作注册表 (${interactionRegistry.length})`,
-            children: (
-              <Table
-                size="small"
-                rowKey="id"
-                columns={registryColumns}
-                dataSource={interactionRegistry}
-                pagination={{ pageSize: 15, size: "small" }}
-                scroll={{ x: true }}
-                locale={{ emptyText: "暂无注册项" }}
-              />
-            ),
+            label: `操作注册表 (${registrySplit.active.length}/${registrySplit.total || 0})`,
+            children: registryPanel,
           },
           {
             key: "actions",

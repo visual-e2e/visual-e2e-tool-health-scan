@@ -59,11 +59,13 @@ export interface ScanOptions {
    * false = 降级到旧的选择器采集模式。默认 true。
    */
   useEventTable?: boolean;
-  /** list 组最多采样几个元素，默认 2 */
+  /** list 组最多采样几个元素（非导航），默认 5 */
   listSampleSize?: number;
+  /** 单页最大点击次数，达到后仅点击导航；默认 50 */
+  maxClicksPerPage?: number;
   /** 等待 DOM 变化超时（ms），默认 3000 */
   domChangeTimeoutMs?: number;
-  /** 执行模式：strict_registry=注册表全尝试，smart_dedup=语义去重优先 */
+  /** 执行模式：strict_registry=注册表全尝试，smart_dedup=语义去重优先（语义去重始终生效） */
   executionMode?: "strict_registry" | "smart_dedup";
   /** 单个注册项最大重试次数（目前保留配置位） */
   maxRetryPerItem?: number;

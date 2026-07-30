@@ -10,7 +10,6 @@
       "type": "selector",
       "op": "equals",
       "values": [
-        "a[href]",
         "button:not([disabled])",
         "[role='button']",
         "input[type='button']:not([disabled])",

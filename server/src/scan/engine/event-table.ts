@@ -9,6 +9,7 @@ import {
   type PickContext,
 } from "./scope-resolver.js";
 import type { OverlayInfo } from "../probes/click/overlay.js";
+import { isNavigationEntry } from "./nav-utils.js";
 
 // ---------------------------------------------------------------------------
 // EventTable — 分层事件表（含 overlay / page 作用域）
@@ -19,6 +20,14 @@ export interface LayerStats {
   executed: number;
   stale: number;
   deferred: number;
+}
+
+function shuffleInPlace<T>(items: T[]): T[] {
+  for (let i = items.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [items[i], items[j]] = [items[j]!, items[i]!];
+  }
+  return items;
 }
 
 export class EventTable {
@@ -53,14 +62,21 @@ export class EventTable {
     const layerGroupCount = new Map<string, number>();
     for (const e of this.entries.values()) {
       if (e.layer !== this.activeLayer || !e.listGroupKey) continue;
+      if (isNavigationEntry(e)) continue;
       const key = `${e.layer}:${e.listGroupKey}`;
       layerGroupCount.set(key, (layerGroupCount.get(key) ?? 0) + 1);
     }
 
-    for (const entry of entries) {
+    // 非导航同类随机打散后再截断，避免总是点到列表前几项
+    const ordered = [
+      ...entries.filter((e) => isNavigationEntry(e)),
+      ...shuffleInPlace(entries.filter((e) => !isNavigationEntry(e))),
+    ];
+
+    for (const entry of ordered) {
       if (this.entries.has(entry.targetId)) continue;
 
-      if (entry.listGroupKey) {
+      if (entry.listGroupKey && !isNavigationEntry(entry)) {
         const key = `${this.activeLayer}:${entry.listGroupKey}`;
         const count = layerGroupCount.get(key) ?? 0;
         if (count >= this.listSampleSize) continue;
