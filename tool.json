@@ -1,6 +1,6 @@
 {
   "id": "health-scan",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "name": "健康扫描",
   "description": "扫描静态资源 404、接口报错、CSS/布局异常；黑白名单规则见 config/",
   "icon": "tool",
