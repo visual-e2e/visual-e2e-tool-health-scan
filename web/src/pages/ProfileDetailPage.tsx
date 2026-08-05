@@ -12,7 +12,8 @@ import { useBrowserStatus } from "../hooks/useBrowserStatus";
 import { navigateToList } from "../hooks/useHashRoute";
 import { useScanSession } from "../hooks/useScanSession";
 import { api } from "../api/client";
-import { fetchLoginDefaults } from "../lib/host-runtime";
+import { fetchLoginDefaults, ensureHostBootstrapped } from "../lib/host-runtime";
+import { useHostContext } from "../hooks/useHostContext";
 import { downloadJson } from "../utils/download";
 import {
   ClickSuccessMode,
@@ -33,6 +34,7 @@ interface ProfileDetailPageProps {
 }
 
 export function ProfileDetailPage({ profileId }: ProfileDetailPageProps) {
+  const { hostReady } = useHostContext();
   const [profile, setProfile] = useState<ScanProfileMeta | null>(null);
   const [loading, setLoading] = useState(true);
   const [configSaving, setConfigSaving] = useState(false);
@@ -168,6 +170,7 @@ export function ProfileDetailPage({ profileId }: ProfileDetailPageProps) {
   const loadAll = useCallback(async () => {
     setLoading(true);
     try {
+      await ensureHostBootstrapped();
       const [meta, config, rules, probe, exclude] = await Promise.all([
         api.getProfile(profileId),
         api.getScanConfig(profileId),
@@ -230,8 +233,9 @@ export function ProfileDetailPage({ profileId }: ProfileDetailPageProps) {
   }, [profileId, applyScanConfig]);
 
   useEffect(() => {
+    if (!hostReady) return;
     void loadAll();
-  }, [loadAll]);
+  }, [hostReady, loadAll]);
 
   const openScanConfig = async () => {
     setScanDrawerOpen(true);

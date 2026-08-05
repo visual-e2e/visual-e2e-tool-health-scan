@@ -21,8 +21,8 @@ export function resolveE2eRoot(): string {
 export { resolveClientStorageRoot } from "./storage/paths.js";
 
 /**
- * Host global config dir (Storage/config).
- * Must be used for browser-runtime / settings — NOT tool-scoped config.
+ * Host global config dir (Storage/config) — browser-runtime / settings only.
+ * Prefer RPC getDataDir().config after bootstrap; never used for tool rules.
  */
 export function resolveHostConfigDir(e2eRoot: string): string {
   const fromRpc = getHostDataDir()?.config?.trim();

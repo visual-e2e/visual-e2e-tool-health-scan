@@ -1,23 +1,23 @@
-import { cp, mkdir, readdir } from "node:fs/promises";
 import { existsSync, readdirSync } from "node:fs";
-import { basename, dirname, join } from "node:path";
+import { join } from "node:path";
 import { getHostDataDir } from "../host-paths.js";
 
 /**
- * Storage 根目录：优先 Host RPC `getDataDir().storage`（经 /api/host/bootstrap 注入）。
- * 独立开发时可由 Host/CLI 注入 CONFIG_DIR（其父级为 Storage）。
+ * Storage 根目录：仅来自 Host RPC `getDataDir().storage`（经 /api/host/bootstrap 注入）。
+ * 工具数据落在 `{storage}/{toolId}/`（profiles、reports）；不读不写 Host 的 Storage/config。
  */
 export function resolveClientStorageRoot(): string {
   const fromRpc = getHostDataDir()?.storage?.trim();
   if (fromRpc) return fromRpc;
-
-  const configDir = process.env.CONFIG_DIR?.trim();
-  if (configDir) {
-    const parent = dirname(configDir);
-    if (basename(parent) === "Storage") return parent;
-  }
-
   throw new Error("Storage 路径未注入：请在 Host 内打开工具以 bootstrap getDataDir()");
+}
+
+export function tryResolveClientStorageRoot(): string | null {
+  try {
+    return resolveClientStorageRoot();
+  } catch {
+    return null;
+  }
 }
 
 export function resolveToolId(): string {
@@ -26,10 +26,6 @@ export function resolveToolId(): string {
 
 export function resolveToolStorageRoot(toolId = resolveToolId()): string {
   return join(resolveClientStorageRoot(), toolId);
-}
-
-export function resolveToolConfigDir(toolId = resolveToolId()): string {
-  return join(resolveToolStorageRoot(toolId), "config");
 }
 
 export function resolveToolReportsDir(toolId = resolveToolId()): string {
@@ -121,33 +117,7 @@ export function resolveProfileScanConfigPath(profileId: string, toolId = resolve
   return join(resolveProfileDir(profileId, toolId), "scan-config.json");
 }
 
+/** Per-profile rules: blacklist / whitelist / probe-selectors / url-exclude. */
 export function resolveProfileConfigDir(profileId: string, toolId = resolveToolId()): string {
   return join(resolveProfileDir(profileId, toolId), "config");
-}
-
-export async function migrateLegacyConfigIfNeeded(toolId = resolveToolId()): Promise<void> {
-  let storageRoot: string;
-  try {
-    storageRoot = resolveClientStorageRoot();
-  } catch {
-    return;
-  }
-  const legacyDir = join(storageRoot, "config");
-  const targetDir = resolveToolConfigDir(toolId);
-  if (!existsSync(legacyDir) || existsSync(join(targetDir, "blacklist.json"))) {
-    return;
-  }
-  await mkdir(targetDir, { recursive: true });
-  const files = await readdir(legacyDir);
-  const ruleFiles = new Set([
-    "blacklist.json",
-    "whitelist.json",
-    "probe-selectors.json",
-    "url-exclude.json",
-  ]);
-  for (const file of files) {
-    if (ruleFiles.has(file)) {
-      await cp(join(legacyDir, file), join(targetDir, file));
-    }
-  }
 }

@@ -53,6 +53,16 @@ export async function bootstrapHostOnServer(): Promise<void> {
   });
 }
 
+/** Shared gate: storage/runtime bootstrap once before any Storage-backed API. */
+let hostBootstrapPromise: Promise<void> | null = null;
+
+export function ensureHostBootstrapped(): Promise<void> {
+  if (!hostBootstrapPromise) {
+    hostBootstrapPromise = bootstrapHostOnServer().catch(() => undefined);
+  }
+  return hostBootstrapPromise;
+}
+
 export async function fetchLoginDefaults(projectId: string): Promise<LoginDefaults> {
   if (!isEmbedded()) {
     return api.loginDefaults(projectId);

@@ -26,10 +26,10 @@ import {
 import {
   createProfile,
   deleteProfile,
+  ensureDefaultProfileIfNeeded,
   getProfile,
   getScanConfig,
   listProfiles,
-  migrateLegacyProfilesIfNeeded,
   saveScanConfig,
   updateProfile,
 } from "./profile/profile-store.js";
@@ -41,7 +41,7 @@ import {
   openReportsDir,
   updateReport,
 } from "./report/report-store.js";
-import { migrateLegacyConfigIfNeeded, resolveSessionArtifactsDir } from "./storage/paths.js";
+import { resolveSessionArtifactsDir } from "./storage/paths.js";
 import { bootstrapHostPaths } from "./host-paths.js";
 import type {
   CreateProfilePayload,
@@ -289,8 +289,6 @@ function renderReportHtml(report: Awaited<ReturnType<typeof getReport>>): string
 
 const app = Fastify({ logger: true });
 await app.register(cors, { origin: true });
-await migrateLegacyConfigIfNeeded();
-await migrateLegacyProfilesIfNeeded();
 
 app.get("/api/health", async () => ({
   ok: true,
@@ -325,6 +323,7 @@ app.post<{
     hostRuntime: req.body?.hostRuntime,
     hostDataDir: req.body?.hostDataDir,
   });
+  await ensureDefaultProfileIfNeeded();
   return { ok: true };
 });
 

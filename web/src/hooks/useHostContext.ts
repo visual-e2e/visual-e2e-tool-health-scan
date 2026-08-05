@@ -7,7 +7,7 @@ import {
   type ProjectListItem,
 } from "@visual-e2e/rpc-sdk";
 import { TOOL_MSG, type HostProjectContext } from "../types";
-import { bootstrapHostOnServer } from "../lib/host-runtime";
+import { ensureHostBootstrapped } from "../lib/host-runtime";
 
 export type { ProjectListItem };
 
@@ -16,10 +16,14 @@ export function useHostContext() {
   const [projectId, setProjectId] = useState<string>();
   const [startUrl, setStartUrl] = useState("");
   const [projects, setProjects] = useState<ProjectListItem[]>([]);
+  const [hostReady, setHostReady] = useState(!isEmbedded());
   const initialized = useRef(false);
 
   useEffect(() => {
-    if (!isEmbedded()) return;
+    if (!isEmbedded()) {
+      setHostReady(true);
+      return;
+    }
 
     const rpc = getRpcClient();
 
@@ -36,6 +40,8 @@ export function useHostContext() {
 
     async function init() {
       try {
+        // Storage-backed APIs need bootstrap first (profiles, reports, …).
+        await ensureHostBootstrapped();
         const [ctx, list, settings] = await Promise.all([
           rpc.getProjectContext(),
           rpc.listProjects(),
@@ -45,9 +51,10 @@ export function useHostContext() {
           (settings as { defaultProject?: string } | null)?.defaultProject?.trim() ||
           list[0]?.id;
         await apply(ctx, list, defaultId);
-        await bootstrapHostOnServer().catch(() => undefined);
       } catch {
         requestLegacyContext();
+      } finally {
+        setHostReady(true);
       }
     }
 
@@ -99,6 +106,7 @@ export function useHostContext() {
 
   return {
     hostCtx,
+    hostReady,
     projectId,
     setProjectId: handleProjectChange,
     startUrl,

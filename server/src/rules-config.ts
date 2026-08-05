@@ -15,7 +15,7 @@ import {
   type RuleType,
   type WhitelistRuleFile,
 } from "./types.js";
-import { resolveProfileConfigDir, resolveToolConfigDir } from "./storage/paths.js";
+import { resolveProfileConfigDir } from "./storage/paths.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -180,14 +180,4 @@ export async function openRulesConfigFile(profileId: string, _list: RuleListType
     await execFileAsync("xdg-open", [baseDir]);
   }
   return { path: baseDir };
-}
-
-/** @deprecated legacy global rules — used only for migration reference */
-export function getLegacyRulesFilePaths() {
-  const baseDir = resolveToolConfigDir();
-  return {
-    baseDir,
-    blacklistPath: join(baseDir, "blacklist.json"),
-    whitelistPath: join(baseDir, "whitelist.json"),
-  };
 }

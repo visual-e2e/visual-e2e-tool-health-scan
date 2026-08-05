@@ -1,22 +1,19 @@
-import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import {
   DEFAULT_SCAN_OPTIONS,
-  getDefaultBlacklistConfig,
-  getDefaultWhitelistConfig,
   type CreateProfilePayload,
   type PersistedScanConfig,
   type ScanProfileMeta,
   type UpdateProfilePayload,
 } from "../types.js";
 import {
-  resolveProfileConfigDir,
   resolveProfileDir,
   resolveProfileScanConfigPath,
   resolveProfilesIndexPath,
-  resolveToolConfigDir,
+  tryResolveClientStorageRoot,
 } from "../storage/paths.js";
 import { getRulesConfigBundle, initProfileRulesFromDefaults } from "../rules-config.js";
 import { getProbeSelectors, initProfileProbeSelectorsFromDefaults } from "../probe-selectors-store.js";
@@ -115,11 +112,13 @@ export async function saveScanConfig(
 }
 
 export async function listProfiles(): Promise<ScanProfileMeta[]> {
+  if (!tryResolveClientStorageRoot()) return [];
   const index = await readIndex();
   return index.profiles.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 }
 
 export async function getProfile(profileId: string): Promise<ScanProfileMeta | null> {
+  if (!tryResolveClientStorageRoot()) return null;
   const index = await readIndex();
   return index.profiles.find((p) => p.id === profileId) ?? null;
 }
@@ -198,33 +197,15 @@ export async function touchProfileAfterScan(
   await writeIndex(index);
 }
 
-/** Migrate legacy global config into a default profile if none exist. */
-export async function migrateLegacyProfilesIfNeeded(): Promise<void> {
+/**
+ * After Host bootstrap: if Storage is ready and no profiles exist, create a default task.
+ * Rules seed from package defaults into profiles/<id>/config/ — not health-scan/config or Host Storage/config.
+ */
+export async function ensureDefaultProfileIfNeeded(): Promise<void> {
+  if (!tryResolveClientStorageRoot()) return;
   const index = await readIndex();
   if (index.profiles.length > 0) return;
-
-  const legacyDir = resolveToolConfigDir();
-  const hasLegacy =
-    existsSync(join(legacyDir, "blacklist.json")) || existsSync(join(legacyDir, "whitelist.json"));
-
-  const profile = await createProfile({
-    name: "默认扫描任务",
-    description: hasLegacy ? "从旧版全局配置迁移" : undefined,
-    startUrl: "",
-  });
-
-  if (hasLegacy) {
-    const targetConfigDir = resolveProfileConfigDir(profile.id);
-    await mkdir(targetConfigDir, { recursive: true });
-    for (const file of ["blacklist.json", "whitelist.json", "probe-selectors.json", "url-exclude.json"]) {
-      const src = join(legacyDir, file);
-      if (existsSync(src)) {
-        await cp(src, join(targetConfigDir, file));
-      }
-    }
-  } else {
-    await getRulesConfigBundle(profile.id);
-  }
+  await createProfile({ name: "默认扫描任务", startUrl: "" });
 }
 
 export async function resolveProfileScanOptions(profileId: string) {

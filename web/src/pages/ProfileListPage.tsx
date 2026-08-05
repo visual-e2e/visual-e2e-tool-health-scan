@@ -20,7 +20,7 @@ import { navigateToProfile } from "../hooks/useHashRoute";
 import type { ScanProfileMeta, LoginDefaults } from "../types";
 
 export function ProfileListPage() {
-  const { projectId, startUrl: hostStartUrl } = useHostContext();
+  const { projectId, startUrl: hostStartUrl, hostReady } = useHostContext();
   const [profiles, setProfiles] = useState<ScanProfileMeta[]>([]);
   const [loading, setLoading] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
@@ -45,8 +45,9 @@ export function ProfileListPage() {
   }, []);
 
   useEffect(() => {
+    if (!hostReady) return;
     void loadProfiles();
-  }, [loadProfiles]);
+  }, [hostReady, loadProfiles]);
 
   useEffect(() => {
     if (hostStartUrl) setCreateUrl(hostStartUrl);
@@ -208,7 +209,7 @@ export function ProfileListPage() {
         <Table
           rowKey="id"
           size="small"
-          loading={loading}
+          loading={loading || !hostReady}
           columns={columns}
           dataSource={profiles}
           pagination={{ pageSize: 15, size: "small" }}
