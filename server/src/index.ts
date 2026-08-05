@@ -289,6 +289,11 @@ function renderReportHtml(report: Awaited<ReturnType<typeof getReport>>): string
 
 const app = Fastify({ logger: true });
 await app.register(cors, { origin: true });
+// Decorate reply.sendFile for /api/artifacts even when not packaging web static assets.
+await app.register(fastifyStatic, {
+  root: dirname(fileURLToPath(import.meta.url)),
+  serve: false,
+});
 
 app.get("/api/health", async () => ({
   ok: true,
@@ -665,10 +670,20 @@ app.post("/api/reports/open-dir", async () => {
 app.get<{ Params: { sessionId: string; "*": string } }>(
   "/api/artifacts/:sessionId/*",
   async (req, reply) => {
-    const dir = resolveSessionArtifactsDir(req.params.sessionId);
-    const relPath = req.params["*"] || "";
+    let dir: string;
+    try {
+      dir = resolveSessionArtifactsDir(req.params.sessionId);
+    } catch {
+      return reply.status(404).send({ error: "文件不存在" });
+    }
+    const relPath = (req.params["*"] || "").replace(/\\/g, "/");
+    if (!relPath || relPath.includes("..")) {
+      return reply.status(404).send({ error: "文件不存在" });
+    }
     const filePath = join(dir, relPath);
-    if (!existsSync(filePath)) return reply.status(404).send({ error: "文件不存在" });
+    if (!filePath.startsWith(dir) || !existsSync(filePath)) {
+      return reply.status(404).send({ error: "文件不存在" });
+    }
     return reply.sendFile(relPath, dir);
   },
 );
@@ -676,7 +691,7 @@ app.get<{ Params: { sessionId: string; "*": string } }>(
 if (serveWeb) {
   const webRoot = join(dirname(fileURLToPath(import.meta.url)), "../../web/dist");
   if (existsSync(webRoot)) {
-    await app.register(fastifyStatic, { root: webRoot, prefix: "/" });
+    await app.register(fastifyStatic, { root: webRoot, prefix: "/", decorateReply: false });
     app.setNotFoundHandler((req, reply) => {
       if (req.url.startsWith("/api")) return reply.code(404).send({ error: "Not found" });
       return reply.sendFile("index.html", webRoot);
